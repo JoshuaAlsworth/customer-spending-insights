@@ -1,0 +1,51 @@
+#!/bin/sh
+set -eu
+
+command=${1:-}
+case "$command" in
+  up)
+    if [ ! -f .env ]; then
+      echo 'Create .env with distinct generated POSTGRES_PASSWORD and API_DB_PASSWORD first.' >&2
+      exit 1
+    fi
+    docker compose up --build -d --wait
+    ;;
+  provision)
+    if [ "$#" -ne 2 ] || [ -z "$2" ] || [ ! -f .env ]; then
+      echo 'Usage: ./dev provision <explicit-compose-project-name> (requires .env)' >&2
+      exit 2
+    fi
+    docker compose -p "$2" up -d --wait db
+    docker compose -p "$2" --profile provision run --rm db-provision
+    ;;
+  down) docker compose down ;;
+  build)
+    (cd apps/api && ./gradlew bootJar)
+    pnpm build
+    ;;
+  check)
+    (cd apps/api && ./gradlew test)
+    pnpm check
+    (cd tools/data-generator && uv run --locked ruff check . && uv run --locked pytest -q)
+    docker compose --env-file .env.example config --quiet
+    ;;
+  test)
+    (cd apps/api && ./gradlew clean test)
+    python3 - <<'PY'
+from pathlib import Path
+from xml.etree import ElementTree
+
+reports = list(Path('apps/api/build/test-results/test').glob('TEST-*.xml'))
+counts = [ElementTree.parse(report).getroot().attrib for report in reports]
+executed = sum(int(c['tests']) - int(c.get('skipped', 0)) for c in counts)
+assert executed > 0 and all(int(c.get('failures', 0)) == 0 and int(c.get('errors', 0)) == 0 for c in counts), 'Java tests missing, skipped or failed'
+print(f'Java tests executed: {executed}')
+PY
+    pnpm test
+    (cd tools/data-generator && uv run --locked pytest -q)
+    ;;
+  *)
+    echo 'Usage: ./dev {up|down|build|check|test}' >&2
+    exit 2
+    ;;
+esac

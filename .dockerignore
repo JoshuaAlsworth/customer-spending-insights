@@ -1,0 +1,9 @@
+.git
+**/node_modules
+**/dist
+**/.gradle
+**/build
+**/.venv
+**/__pycache__
+.env
+capitec-private
