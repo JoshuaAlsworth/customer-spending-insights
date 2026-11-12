@@ -432,6 +432,125 @@ class FinancialIntegrationTest {
     }
 
     @Test
+    void dashboardAndActivityShareReportingScopeRules() throws Exception {
+        Cookie owner = login("fixture-f04");
+        for (String path : List.of("/api/v1/dashboard", "/api/v1/transactions")) {
+            var defaultResponse = mvc.perform(get(path).cookie(owner)).andReturn().getResponse();
+            assertThat(defaultResponse.getStatus()).isEqualTo(200);
+            if (path.endsWith("dashboard")) {
+                assertThat(
+                                JsonPath.<String>read(
+                                        defaultResponse.getContentAsString(), "$.scope.from"))
+                        .isEqualTo("2026-10-01");
+                assertThat(
+                                JsonPath.<String>read(
+                                        defaultResponse.getContentAsString(), "$.scope.to"))
+                        .isEqualTo("2026-10-31");
+            }
+            var explicit =
+                    mvc.perform(
+                                    get(path)
+                                            .param("from", "2025-10-01")
+                                            .param("to", "2025-11-30")
+                                            .param("accountIds", "f04-savings,f04-everyday")
+                                            .cookie(owner))
+                            .andReturn()
+                            .getResponse();
+            assertThat(explicit.getStatus()).isEqualTo(200);
+            for (String invalid : List.of("2026-02-30", "2020-01-01", "2026-11-01")) {
+                assertThat(
+                                mvc.perform(get(path).param("from", invalid).cookie(owner))
+                                        .andReturn()
+                                        .getResponse()
+                                        .getStatus())
+                        .isEqualTo(400);
+            }
+            for (String invalid : List.of("", "f04-everyday,f04-everyday")) {
+                assertThat(
+                                mvc.perform(get(path).param("accountIds", invalid).cookie(owner))
+                                        .andReturn()
+                                        .getResponse()
+                                        .getStatus())
+                        .isEqualTo(400);
+            }
+            for (String foreign : List.of("f01-everyday", "f04-everyday,f01-everyday")) {
+                assertThat(
+                                mvc.perform(get(path).param("accountIds", foreign).cookie(owner))
+                                        .andReturn()
+                                        .getResponse()
+                                        .getStatus())
+                        .isEqualTo(404);
+            }
+            assertThat(
+                            mvc.perform(get(path).cookie(login("fixture-empty")))
+                                    .andReturn()
+                                    .getResponse()
+                                    .getStatus())
+                    .isEqualTo(200);
+        }
+        var dashboard =
+                mvc.perform(
+                                get("/api/v1/dashboard")
+                                        .param("accountIds", "f04-savings,f04-everyday")
+                                        .cookie(owner))
+                        .andReturn()
+                        .getResponse();
+        assertThat(
+                        JsonPath.<List<String>>read(
+                                dashboard.getContentAsString(), "$.scope.accountIds"))
+                .containsExactly("f04-savings", "f04-everyday");
+        String firstOrder =
+                mvc.perform(
+                                get("/api/v1/transactions")
+                                        .param("accountIds", "f04-savings,f04-everyday")
+                                        .param("from", "2025-10-01")
+                                        .param("to", "2025-11-30")
+                                        .param("limit", "1")
+                                        .cookie(owner))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        String secondOrder =
+                mvc.perform(
+                                get("/api/v1/transactions")
+                                        .param("accountIds", "f04-everyday,f04-savings")
+                                        .param("from", "2025-10-01")
+                                        .param("to", "2025-11-30")
+                                        .param("limit", "1")
+                                        .cookie(owner))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        assertThat(JsonPath.<String>read(firstOrder, "$.nextCursor"))
+                .isNotBlank()
+                .isEqualTo(JsonPath.<String>read(secondOrder, "$.nextCursor"));
+    }
+
+    @Test
+    void bothReportingRoutesReturnUnavailableWithoutDataset() throws Exception {
+        Cookie owner = login("fixture-f04");
+        try (var admin =
+                        DriverManager.getConnection(
+                                db.getJdbcUrl(), db.getUsername(), db.getPassword());
+                var statement = admin.createStatement()) {
+            statement.execute("CREATE TEMP TABLE saved_dataset AS TABLE dataset_instance");
+            statement.executeUpdate("DELETE FROM dataset_instance");
+            try {
+                for (String path : List.of("/api/v1/dashboard", "/api/v1/transactions")) {
+                    assertThat(
+                                    mvc.perform(get(path).cookie(owner))
+                                            .andReturn()
+                                            .getResponse()
+                                            .getStatus())
+                            .isEqualTo(503);
+                }
+            } finally {
+                statement.executeUpdate("INSERT INTO dataset_instance SELECT * FROM saved_dataset");
+            }
+        }
+    }
+
+    @Test
     void activityKindsSearchAndStaleCursor() throws Exception {
         Cookie session = login("fixture-f09");
         var pending =
