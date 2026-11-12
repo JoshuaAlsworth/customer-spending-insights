@@ -1,6 +1,7 @@
 plugins {
     java
     id("org.springframework.boot") version "4.1.2"
+    id("com.diffplug.spotless") version "8.11.0"
 }
 
 group = "za.co.customerinsights"
@@ -14,6 +15,13 @@ java {
 
 repositories {
     mavenCentral()
+}
+
+spotless {
+    java {
+        target("src/**/*.java")
+        googleJavaFormat("2.0.0").aosp()
+    }
 }
 
 dependencies {

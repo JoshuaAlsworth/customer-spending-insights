@@ -5,6 +5,7 @@ import AppHeader from "./app/AppHeader.vue";
 import SignIn from "./features/auth/SignIn.vue";
 import ScopeControls from "./features/accounts/ScopeControls.vue";
 import OverviewView from "./features/overview/OverviewView.vue";
+import TransactionExplorer from "./features/transactions/TransactionExplorer.vue";
 import {
   ApiError,
   getAccounts,
@@ -18,14 +19,29 @@ const client = useQueryClient();
 const session = ref<Session | null>(null);
 const booting = ref(true);
 const refreshing = ref(false);
+const reconciliationAttempted = ref(false);
+const reconciling = ref(false);
 const generation = ref(0);
 const privacyHidden = ref(false);
 const sessionLocked = ref(false);
 const hidden = computed(() => privacyHidden.value || sessionLocked.value);
 const view = ref<"overview" | "transactions">(
-  location.hash === "#transactions" ? "transactions" : "overview",
+  location.hash.startsWith("#transactions") ? "transactions" : "overview",
 );
 const selectedAccount = ref("");
+const detailId = ref<string | null>(parseDetail());
+function parseDetail() {
+  const match = location.hash.match(/^#transactions\/(au|pe)_[A-Za-z0-9_-]+$/);
+  return match ? location.hash.slice("#transactions/".length) : null;
+}
+function openDetail(id: string) {
+  detailId.value = id;
+  location.hash = `transactions/${id}`;
+}
+function closeDetail() {
+  detailId.value = null;
+  location.hash = "transactions";
+}
 const from = ref("");
 const to = ref("");
 const periodSet = ref(false);
@@ -39,11 +55,14 @@ function clearSensitiveState() {
   generation.value++;
   session.value = null;
   selectedAccount.value = "";
+  detailId.value = null;
   from.value = "";
   to.value = "";
   periodSet.value = false;
   privacyHidden.value = false;
   sessionLocked.value = false;
+  reconciliationAttempted.value = false;
+  reconciling.value = false;
   client.clear();
 }
 
@@ -175,14 +194,50 @@ function toggleAmounts() {
   if (!sessionLocked.value) privacyHidden.value = !privacyHidden.value;
 }
 async function refresh() {
+  reconciliationAttempted.value = false;
   if (refreshing.value) return;
   status.value = "";
   refreshing.value = true;
   try {
-    await Promise.all([accounts.refetch(), dashboard.refetch()]);
+    await Promise.all([
+      accounts.refetch(),
+      dashboard.refetch(),
+      client.invalidateQueries({ queryKey: ["transactions"] }),
+      client.invalidateQueries({ queryKey: ["recent-transactions"] }),
+      client.invalidateQueries({ queryKey: ["transaction-history-presence"] }),
+    ]);
   } finally {
     refreshing.value = false;
   }
+}
+watch([selectedAccount, from, to], () => {
+  reconciliationAttempted.value = false;
+});
+async function reconcileActivity() {
+  if (!session.value || sessionLocked.value || reconciling.value) return;
+  if (reconciliationAttempted.value) {
+    status.value = "Updated activity is available. Refresh to align your view.";
+    return;
+  }
+  reconciliationAttempted.value = true;
+  reconciling.value = true;
+  try {
+    await dashboard.refetch();
+    await Promise.all([
+      client.invalidateQueries({ queryKey: ["transactions"] }),
+      client.invalidateQueries({ queryKey: ["recent-transactions"] }),
+      client.invalidateQueries({ queryKey: ["transaction-history-presence"] }),
+    ]);
+  } finally {
+    reconciling.value = false;
+  }
+}
+function activityAligned() {
+  if (
+    status.value ===
+    "Updated activity is available. Refresh to align your view."
+  )
+    status.value = "";
 }
 function setPeriod(period: { from: string; to: string }) {
   from.value = period.from;
@@ -191,10 +246,14 @@ function setPeriod(period: { from: string; to: string }) {
 }
 function setView(next: "overview" | "transactions") {
   view.value = next;
+  detailId.value = null;
   location.hash = next;
 }
 function onHashChange() {
-  view.value = location.hash === "#transactions" ? "transactions" : "overview";
+  view.value = location.hash.startsWith("#transactions")
+    ? "transactions"
+    : "overview";
+  detailId.value = parseDetail();
 }
 function onPageShow(event: PageTransitionEvent) {
   if (event.persisted) void validateSession();
@@ -256,7 +315,9 @@ onUnmounted(() => {
       Check session
     </button>
     <div class="page-heading">
-      <h1>{{ view === "overview" ? "Your spending" : "Transactions" }}</h1>
+      <h1 tabindex="-1">
+        {{ view === "overview" ? "Your spending" : "Transactions" }}
+      </h1>
       <span
         v-if="!sessionLocked && dashboard.data.value?.dataset.referenceDate"
         class="data-through"
@@ -317,16 +378,60 @@ onUnmounted(() => {
         v-else-if="dashboard.data.value"
         :dashboard="dashboard.data.value"
         :hidden="hidden"
+        :customer-id="session.customerId"
+        :account-ids="accountIds"
+        :generation="generation"
+        :reconciling="reconciling"
+        @revision-aligned="activityAligned"
+        @revision-mismatch="reconcileActivity"
+        @unauthorized="clearSensitiveState"
         @transactions="setView('transactions')"
       />
     </template>
-    <section v-else class="state-panel" aria-labelledby="transactions-title">
-      <h2 id="transactions-title">Transaction history</h2>
-      <p>
-        Transaction exploration is being built. Your account and reporting
-        period will carry through when it is available.
-      </p>
-    </section>
+    <p
+      v-if="
+        view === 'transactions' && dashboard.isPending.value && !sessionLocked
+      "
+      class="state-panel"
+      role="status"
+    >
+      Loading your spending scope…
+    </p>
+    <div
+      v-if="
+        view === 'transactions' && dashboard.isError.value && !sessionLocked
+      "
+      class="state-panel error"
+      role="alert"
+    >
+      Spending scope could not be loaded.
+      <button type="button" @click="dashboard.refetch()">Retry</button>
+    </div>
+    <TransactionExplorer
+      v-if="
+        dashboard.data.value &&
+        !sessionLocked &&
+        accounts.data.value?.accounts.length
+      "
+      v-show="view === 'transactions'"
+      :customer-id="session.customerId"
+      :account-ids="accountIds"
+      :from="from"
+      :to="to"
+      :hidden="hidden"
+      :active="view === 'transactions' && !sessionLocked"
+      :generation="generation"
+      :dataset-epoch="dashboard.data.value.dataset.instanceEpoch"
+      :dashboard-revision="dashboard.data.value.dataset.customerRevision"
+      :reconciling="reconciling"
+      :reference-date="dashboard.data.value.dataset.referenceDate"
+      :detail-id="detailId"
+      @open="openDetail"
+      @close="closeDetail"
+      @unauthorized="clearSensitiveState"
+      @revision-mismatch="reconcileActivity"
+      @revision-aligned="activityAligned"
+    />
   </main>
   <nav
     v-if="session && !sessionLocked"

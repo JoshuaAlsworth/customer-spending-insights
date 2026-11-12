@@ -76,3 +76,56 @@ export async function getDashboard(
   if (!result.data) throw new ApiError(result.response.status);
   return result.data;
 }
+
+export type Activity = components["schemas"]["Activity"];
+export type ActivityPage = components["schemas"]["ActivityPage"];
+export type TransactionType = components["schemas"]["TransactionType"];
+export type CategoryCode = components["schemas"]["CategoryCode"];
+
+export async function getTransactions(
+  filters: {
+    accountIds?: string[];
+    from?: string;
+    to?: string;
+    status?: "ALL" | "PENDING" | "POSTED" | "CANCELLED";
+    type?: TransactionType;
+    category?: CategoryCode;
+    search?: string;
+    limit?: number;
+    cursor?: string;
+  },
+  signal?: AbortSignal,
+): Promise<ActivityPage> {
+  const result = await api.GET("/api/v1/transactions", {
+    params: {
+      query: {
+        ...(filters.accountIds?.length
+          ? { accountIds: filters.accountIds.join(",") }
+          : {}),
+        ...(filters.from ? { from: filters.from } : {}),
+        ...(filters.to ? { to: filters.to } : {}),
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.type ? { type: filters.type } : {}),
+        ...(filters.category ? { category: filters.category } : {}),
+        ...(filters.search ? { search: filters.search } : {}),
+        ...(filters.limit ? { limit: filters.limit } : {}),
+        ...(filters.cursor ? { cursor: filters.cursor } : {}),
+      },
+    },
+    signal,
+  });
+  if (!result.data) throw new ApiError(result.response.status);
+  return result.data as unknown as ActivityPage;
+}
+
+export async function getTransaction(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Activity> {
+  const result = await api.GET("/api/v1/transactions/{id}", {
+    params: { path: { id } },
+    signal,
+  });
+  if (!result.data) throw new ApiError(result.response.status);
+  return result.data as unknown as Activity;
+}

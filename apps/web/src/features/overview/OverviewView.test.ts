@@ -1,5 +1,6 @@
 import { mount } from "@vue/test-utils";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { QueryClient, VueQueryPlugin } from "@tanstack/vue-query";
 import OverviewView from "./OverviewView.vue";
 import type { Dashboard } from "../../api/client";
 
@@ -29,8 +30,26 @@ const dashboard: Dashboard = {
   },
 };
 
+vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+const global = {
+  plugins: [
+    [
+      VueQueryPlugin,
+      {
+        queryClient: new QueryClient({
+          defaultOptions: { queries: { retry: false } },
+        }),
+      },
+    ] as [typeof VueQueryPlugin, { queryClient: QueryClient }],
+  ],
+};
+const previewProps = { customerId: "c1", accountIds: ["a1"], generation: 0 };
+
 it("shows exact authoritative amounts and hides every accessible amount", () => {
-  const wrapper = mount(OverviewView, { props: { dashboard, hidden: false } });
+  const wrapper = mount(OverviewView, {
+    props: { dashboard, hidden: false, ...previewProps },
+    global,
+  });
   expect(wrapper.text()).toContain("R850.00");
   expect(wrapper.text()).toContain("+R17,150.00");
   expect(wrapper.text()).toContain("−R200.00");
@@ -52,7 +71,8 @@ it("uses one visual scale for equal positive and negative trend buckets", () => 
     ],
   };
   const wrapper = mount(OverviewView, {
-    props: { dashboard: signed, hidden: false },
+    props: { dashboard: signed, hidden: false, ...previewProps },
+    global,
   });
   expect(
     wrapper.findAll(".trend-bar").map((bar) => bar.attributes("style")),

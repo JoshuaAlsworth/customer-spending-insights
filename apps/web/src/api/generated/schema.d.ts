@@ -107,7 +107,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Contract reserved; this route is not implemented yet. */
+        /** @description Canonical owned activity history. */
         get: operations["getTransactions"];
         put?: never;
         post?: never;
@@ -124,7 +124,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Contract reserved; this route is not implemented yet. */
+        /** @description One owned typed activity detail. */
         get: operations["getTransaction"];
         put?: never;
         post?: never;

@@ -16,6 +16,7 @@ from csi_data.generate import generate
 from csi_data.manifest import verify_files
 from csi_data.policy import ROOT, canonical, digest, file_digest
 
+
 @pytest.fixture(scope="module")
 def demo(tmp_path_factory):
     location = tmp_path_factory.mktemp("import-demo") / "demo"

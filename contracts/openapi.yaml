@@ -93,7 +93,7 @@ paths:
   /api/v1/transactions:
     get:
       operationId: getTransactions
-      description: Contract reserved; this route is not implemented yet.
+      description: Canonical owned activity history.
       parameters:
         - {name: accountIds, in: query, schema: {type: string}}
         - {name: from, in: query, schema: {type: string, format: date}}
@@ -117,7 +117,7 @@ paths:
   /api/v1/transactions/{id}:
     get:
       operationId: getTransaction
-      description: Contract reserved; this route is not implemented yet.
+      description: One owned typed activity detail.
       parameters:
         - {name: id, in: path, required: true, schema: {type: string, pattern: '^(au|pe)_[A-Za-z0-9_-]+$'}}
       responses:

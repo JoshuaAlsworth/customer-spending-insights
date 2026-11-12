@@ -21,6 +21,7 @@ services:
       DATABASE_URL: jdbc:postgresql://db:5432/customer_insights
       DATABASE_USER: customer_insights_api
       DATABASE_PASSWORD: ${API_DB_PASSWORD:?Set API_DB_PASSWORD in .env}
+      CURSOR_SECRET: ${CURSOR_SECRET:?Set CURSOR_SECRET in .env}
       COOKIE_SECURE: "false"
     depends_on:
       db-provision:
