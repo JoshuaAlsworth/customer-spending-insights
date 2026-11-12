@@ -54,6 +54,14 @@ case "$command" in
     dataset_path=$(cd "$2" 2>/dev/null && pwd -P) || { echo 'Invalid dataset directory' >&2; exit 2; }
     (cd tools/data-generator && uv run --locked python -m csi_data import "$dataset_path" --project "$3" --approve-target "$4")
     ;;
+  simulate:provision)
+    shift
+    (cd tools/data-generator && uv run --locked python -m csi_data.simulator_approval "$@")
+    ;;
+  simulate)
+    shift
+    python3 tools/simulator/cli.py "$@"
+    ;;
   down) docker compose down ;;
   build)
     (cd apps/api && ./gradlew bootJar)
@@ -65,13 +73,13 @@ case "$command" in
     pnpm --filter web api:check
     pnpm check
     pnpm test
-    (cd tools/data-generator && uv run --locked ruff check . && uv run --locked ruff format --check . && uv run --locked pytest -q)
+    (cd tools/data-generator && uv run --locked ruff check . ../simulator && uv run --locked ruff format --check . ../simulator && uv run --locked pytest -q)
     docker compose --env-file .env.example config --quiet
     ;;
   format)
     (cd apps/api && ./gradlew spotlessApply)
     pnpm --filter web exec prettier --write .
-    (cd tools/data-generator && uv run --locked ruff format .)
+    (cd tools/data-generator && uv run --locked ruff format . ../simulator)
     ;;
   test)
     (cd apps/api && ./gradlew clean test)
@@ -89,7 +97,7 @@ PY
     (cd tools/data-generator && uv run --locked pytest -q)
     ;;
   *)
-    echo 'Usage: ./dev {up|provision|fixture|down|build|check|format|test|data:demo|data:benchmark|data:generate|data:validate|data:import}' >&2
+    echo 'Usage: ./dev {up|provision|fixture|down|build|check|format|test|data:demo|data:benchmark|data:generate|data:validate|data:import|simulate:provision|simulate}' >&2
     exit 2
     ;;
 esac
