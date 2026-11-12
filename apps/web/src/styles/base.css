@@ -610,6 +610,7 @@ button:disabled {
   .app-header {
     min-height: 62px;
     padding: 0 var(--space-4);
+    gap: var(--space-2);
   }
   .main-nav {
     display: none;
