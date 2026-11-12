@@ -7,23 +7,28 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc --noEmit && vite build",
     "check": "vue-tsc --noEmit && eslint . && prettier --check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "api:generate": "openapi-typescript ../../contracts/openapi.yaml -o src/api/generated/schema.d.ts",
+    "api:check": "openapi-typescript ../../contracts/openapi.yaml -o /tmp/csi-openapi-generated.d.ts && cmp src/api/generated/schema.d.ts /tmp/csi-openapi-generated.d.ts"
   },
   "dependencies": {
+    "@tanstack/vue-query": "5.107.1",
+    "openapi-fetch": "0.17.0",
     "vue": "3.5.45"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "6.0.10",
     "@vue/eslint-config-typescript": "14.9.0",
+    "@vue/test-utils": "2.4.6",
     "@vue/tsconfig": "0.9.1",
     "eslint": "10.14.0",
     "eslint-plugin-vue": "10.12.1",
+    "jsdom": "27.1.0",
+    "openapi-typescript": "7.13.0",
     "prettier": "3.10.0",
     "typescript": "5.9.3",
     "vite": "8.3.8",
     "vitest": "5.1.0",
-    "vue-tsc": "3.3.14",
-    "@vue/test-utils": "2.4.6",
-    "jsdom": "27.1.0"
+    "vue-tsc": "3.3.14"
   }
 }

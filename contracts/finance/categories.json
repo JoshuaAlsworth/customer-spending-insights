@@ -1,0 +1,21 @@
+{
+  "version": "CSI-CAT-1.0",
+  "categories": {
+    "HOUSING_UTILITIES":"Housing & utilities",
+    "GROCERIES":"Groceries",
+    "TRANSPORT_FUEL":"Transport & fuel",
+    "FOOD_DINING":"Food & dining",
+    "SHOPPING":"Shopping",
+    "HEALTH":"Health",
+    "SUBSCRIPTIONS_COMMS":"Subscriptions & communications",
+    "INSURANCE_FIN_SERVICES":"Insurance & financial services",
+    "EDUCATION":"Education",
+    "ENTERTAINMENT_LEISURE":"Entertainment & leisure",
+    "CASH_WITHDRAWALS":"Cash withdrawals",
+    "MONEY_SENT":"Money sent",
+    "BANK_FEES":"Bank fees",
+    "UNCATEGORIZED":"Uncategorized"
+  },
+  "provenance": ["TYPE_RULE","OBLIGATION","MERCHANT","MCC","UNCATEGORIZED","NOT_APPLICABLE"],
+  "precedence": ["OBLIGATION","MERCHANT","MCC","UNCATEGORIZED"]
+}

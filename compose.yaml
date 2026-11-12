@@ -21,9 +21,10 @@ services:
       DATABASE_URL: jdbc:postgresql://db:5432/customer_insights
       DATABASE_USER: customer_insights_api
       DATABASE_PASSWORD: ${API_DB_PASSWORD:?Set API_DB_PASSWORD in .env}
+      COOKIE_SECURE: "false"
     depends_on:
-      db:
-        condition: service_healthy
+      db-provision:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/actuator/health"]
       interval: 5s
@@ -44,8 +45,21 @@ services:
       timeout: 3s
       retries: 12
 
+  db-migrate:
+    image: flyway/flyway:12.4.0@sha256:5be18367a9b3979a9f37234c371b80da457a448fb9577bd94d4bf24d923fafac
+    command: ["migrate"]
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db:5432/customer_insights
+      FLYWAY_USER: customer_insights
+      FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      FLYWAY_CONNECT_RETRIES: 10
+    volumes:
+      - ./apps/api/src/main/resources/db/migration:/flyway/sql:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
   db-provision:
-    profiles: [provision]
     image: postgres:17.7-alpine@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
@@ -54,8 +68,8 @@ services:
       - ./tools/db/provision.sh:/provision.sh:ro
     entrypoint: ["sh", "/provision.sh"]
     depends_on:
-      db:
-        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
 
 volumes:
   postgres-data:

@@ -1,0 +1,21 @@
+{
+  "version": "CSI-TAX-1.0",
+  "types": {
+    "SALARY_CREDIT": {"sign":"POSITIVE","effect":"INCOME","category":"NONE","compensation":"INCOME_REVERSAL"},
+    "ALLOWANCE_CREDIT": {"sign":"POSITIVE","effect":"INCOME","category":"NONE","compensation":"INCOME_REVERSAL"},
+    "EXTERNAL_RECEIPT": {"sign":"POSITIVE","effect":"INCOME","category":"NONE","compensation":"INCOME_REVERSAL"},
+    "INTEREST_CREDIT": {"sign":"POSITIVE","effect":"INCOME","category":"NONE","compensation":"INCOME_REVERSAL"},
+    "CARD_PURCHASE": {"sign":"NEGATIVE","effect":"SPEND","category":"CLASSIFIED","compensation":"SPEND_REFUND_OR_REVERSAL"},
+    "DEBIT_ORDER": {"sign":"NEGATIVE","effect":"SPEND","category":"CLASSIFIED","compensation":"SPEND_REVERSAL"},
+    "EXTERNAL_PAYMENT": {"sign":"NEGATIVE","effect":"SPEND","category":"MONEY_SENT","compensation":"SPEND_REVERSAL"},
+    "CASH_WITHDRAWAL": {"sign":"NEGATIVE","effect":"SPEND","category":"CASH_WITHDRAWALS","compensation":"SPEND_REVERSAL"},
+    "BANK_FEE": {"sign":"NEGATIVE","effect":"SPEND","category":"BANK_FEES","compensation":"SPEND_REVERSAL"},
+    "SPEND_REFUND": {"sign":"POSITIVE","effect":"SPEND","category":"INHERITED","original":"CARD_PURCHASE","compensation":"NONE"},
+    "SPEND_REVERSAL": {"sign":"POSITIVE","effect":"SPEND","category":"INHERITED","original":"ELIGIBLE_SPEND_DEBIT_NO_PRIOR_COMPENSATION","compensation":"NONE"},
+    "INCOME_REVERSAL": {"sign":"NEGATIVE","effect":"INCOME","category":"NONE","original":"ELIGIBLE_INCOME_CREDIT_ONCE","compensation":"NONE"},
+    "OWN_TRANSFER_OUT": {"sign":"NEGATIVE","effect":"INTERNAL","category":"NONE","pair":"OWN_TRANSFER_IN"},
+    "OWN_TRANSFER_IN": {"sign":"POSITIVE","effect":"INTERNAL","category":"NONE","pair":"OWN_TRANSFER_OUT"},
+    "OWN_TRANSFER_REVERSAL_OUT": {"sign":"NEGATIVE","effect":"INTERNAL","category":"NONE","pair":"OWN_TRANSFER_REVERSAL_IN","fixtureOnly":true},
+    "OWN_TRANSFER_REVERSAL_IN": {"sign":"POSITIVE","effect":"INTERNAL","category":"NONE","pair":"OWN_TRANSFER_REVERSAL_OUT","fixtureOnly":true}
+  }
+}

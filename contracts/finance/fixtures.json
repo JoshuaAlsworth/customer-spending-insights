@@ -1,0 +1,15 @@
+{
+  "source":"Independently authored signed integer-cent fixture expectations",
+  "F-01":{"incomeMinor":"2000000","grossSpendingMinor":"105000","spendingCreditsMinor":"20000","netSpendingMinor":"85000","ownAccountFlowMinor":"-200000","netMovementMinor":"1715000"},
+  "F-02":{"incomeMinor":"2000000","grossSpendingMinor":"105000","spendingCreditsMinor":"20000","netSpendingMinor":"85000","ownAccountFlowMinor":"0","netMovementMinor":"1915000"},
+  "F-03":{"incomeMinor":"0","grossSpendingMinor":"5000","spendingCreditsMinor":"20000","netSpendingMinor":"-15000","ownAccountFlowMinor":"0","netMovementMinor":"15000","categories":{"HEALTH":"-20000","BANK_FEES":"5000"}},
+  "F-04":{"october2025":{"ownAccountFlowMinor":"-200000","netMovementMinor":"-200000"},"november2025":{"ownAccountFlowMinor":"200000","netMovementMinor":"200000"},"combined":{"ownAccountFlowMinor":"0","netMovementMinor":"0"}},
+  "F-05":{"before":{"netSpendingMinor":"0"},"after":{"netSpendingMinor":"24000","netMovementMinor":"-24000"},"logicalPurchaseCount":1},
+  "F-06":{"status":"CANCELLED","postedCount":0,"incomeMinor":"0","netSpendingMinor":"0","ownAccountFlowMinor":"0","netMovementMinor":"0"},
+  "F-07":{"netSpendingMinor":"50000","extraRefundMinor":"60000","extraRefundOutcome":"REJECT_NO_MUTATION"},
+  "F-08":{"spendReversalAfterPartialRefund":"REJECT_NO_MUTATION","incomeMinor":"0","netMovementMinor":"0"},
+  "F-09":{"incomeMinor":"1875000","grossSpendingMinor":"1260050","spendingCreditsMinor":"12000","netSpendingMinor":"1248050","ownAccountFlowMinor":"0","netMovementMinor":"626950","categories":{"HOUSING_UTILITIES":"420000","GROCERIES":"325000","TRANSPORT_FUEL":"190000","MONEY_SENT":"157550","CASH_WITHDRAWALS":"100000","UNCATEGORIZED":"60000","BANK_FEES":"7500","HEALTH":"-12000"},"weeklyBuckets":["0","67500","257550","305000","618000"]},
+  "F-10":{"kind":"VALIDATION_AND_BOUNDARIES"},
+  "F-11":{"kind":"CONCURRENT_STATE"},
+  "F-12":{"kind":"REVISION_EPOCH_IDENTITY"}
+}
