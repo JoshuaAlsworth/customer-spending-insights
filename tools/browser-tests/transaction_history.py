@@ -70,7 +70,12 @@ with sync_playwright() as playwright:
     first_amount = page.locator(".activity-card-top strong:last-child").first.inner_text()
     for width in (320, 375, 390, 430, 599, 600, 601, 767, 768, 769, 820, 839, 840, 841, 1024, 1280, 1440):
         page.set_viewport_size({"width": width, "height": 900})
-        assert not page.evaluate("document.documentElement.scrollWidth > window.innerWidth"), width
+        if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+            overflowing = page.evaluate("""() => [...document.querySelectorAll('*')]
+                .filter(el => el.getBoundingClientRect().right > innerWidth)
+                .map(el => [el.tagName, el.className, el.getBoundingClientRect().right])
+                .slice(0, 20)""")
+            raise AssertionError((width, overflowing))
         if width <= 840:
             expect(page.locator(".activity-cards")).to_be_visible()
             amount = page.locator(".activity-card-top strong:last-child").first
