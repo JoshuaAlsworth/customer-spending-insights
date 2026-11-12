@@ -82,6 +82,42 @@ export type ActivityPage = components["schemas"]["ActivityPage"];
 export type TransactionType = components["schemas"]["TransactionType"];
 export type CategoryCode = components["schemas"]["CategoryCode"];
 
+type Authorization = Extract<Activity, { recordKind: "AUTHORIZATION" }>;
+type PostedEntry = Extract<Activity, { recordKind: "POSTED_ENTRY" }>;
+type AuthorizationResponse = Omit<
+  Authorization,
+  "postedAt" | "amountMinor" | "effectGroup" | "categoryCode"
+> &
+  Partial<
+    Pick<
+      Authorization,
+      "postedAt" | "amountMinor" | "effectGroup" | "categoryCode"
+    >
+  >;
+
+function activity(response: AuthorizationResponse | PostedEntry): Activity {
+  if (response.recordKind === "POSTED_ENTRY") return response;
+  if (response.recordKind !== "AUTHORIZATION")
+    throw new Error("Invalid activity response");
+  for (const field of [
+    "postedAt",
+    "amountMinor",
+    "effectGroup",
+    "categoryCode",
+  ] as const) {
+    if (!Object.hasOwn(response, field) || response[field] !== null) {
+      throw new Error(`Invalid authorization response: ${field}`);
+    }
+  }
+  return {
+    ...response,
+    postedAt: null,
+    amountMinor: null,
+    effectGroup: null,
+    categoryCode: null,
+  };
+}
+
 export async function getTransactions(
   filters: {
     accountIds?: string[];
@@ -115,7 +151,7 @@ export async function getTransactions(
     signal,
   });
   if (!result.data) throw new ApiError(result.response.status);
-  return result.data as unknown as ActivityPage;
+  return { ...result.data, items: result.data.items.map(activity) };
 }
 
 export async function getTransaction(
@@ -127,5 +163,5 @@ export async function getTransaction(
     signal,
   });
   if (!result.data) throw new ApiError(result.response.status);
-  return result.data as unknown as Activity;
+  return activity(result.data);
 }

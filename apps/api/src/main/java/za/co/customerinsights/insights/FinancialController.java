@@ -30,9 +30,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class FinancialController {
     private static final ZoneId REPORTING_ZONE = ZoneId.of("Africa/Johannesburg");
     private final JdbcTemplate jdbc;
+    private final ReportingScope reportingScope;
 
-    public FinancialController(JdbcTemplate jdbc) {
+    public FinancialController(JdbcTemplate jdbc, ReportingScope reportingScope) {
         this.jdbc = jdbc;
+        this.reportingScope = reportingScope;
     }
 
     public record Account(String id, String alias, String maskedSuffix, String accountKind) {}
@@ -96,53 +98,13 @@ public class FinancialController {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST, "Unsupported query parameter");
         }
-        String owner = authentication.getName();
-        Dataset dataset =
-                jdbc.query(
-                        "SELECT d.dataset_id,d.instance_epoch,c.customer_revision,d.reference_date FROM dataset_instance d CROSS JOIN customers c WHERE d.singleton=true AND c.id=?",
-                        rs ->
-                                rs.next()
-                                        ? new Dataset(
-                                                rs.getString(1),
-                                                rs.getString(2),
-                                                rs.getLong(3),
-                                                rs.getDate(4).toLocalDate())
-                                        : null,
-                        owner);
-        if (dataset == null)
-            throw new ResponseStatusException(
-                    HttpStatus.SERVICE_UNAVAILABLE, "Dataset unavailable");
-        LocalDate end = to == null ? dataset.referenceDate() : parseDate(to);
-        LocalDate start = from == null ? end.withDayOfMonth(1) : parseDate(from);
-        if (start.isAfter(end)
-                || end.isAfter(dataset.referenceDate())
-                || start.isBefore(end.minusMonths(36).plusDays(1))
-                || ChronoUnit.DAYS.between(start, end) > 1100) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid reporting period");
-        }
-        List<String> selected = parseAccounts(accountIds);
-        if (selected == null) {
-            selected =
-                    jdbc.query(
-                            "SELECT id FROM accounts WHERE customer_id=? ORDER BY id",
-                            (rs, n) -> rs.getString(1),
-                            owner);
-        } else if (!selected.isEmpty()) {
-            String placeholders =
-                    String.join(",", java.util.Collections.nCopies(selected.size(), "?"));
-            var args = new ArrayList<Object>();
-            args.add(owner);
-            args.addAll(selected);
-            Integer count =
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM accounts WHERE customer_id=? AND id IN ("
-                                    + placeholders
-                                    + ")",
-                            Integer.class,
-                            args.toArray());
-            if (count == null || count != selected.size())
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Scope unavailable");
-        }
+        ReportingScope.Resolved resolved =
+                reportingScope.resolve(authentication.getName(), accountIds, from, to, false);
+        String owner = resolved.owner();
+        Dataset dataset = resolved.dataset();
+        LocalDate start = resolved.from();
+        LocalDate end = resolved.to();
+        List<String> selected = resolved.accounts();
         if (selected.isEmpty()) return emptyDashboard(start, end, selected, dataset);
         String placeholders = String.join(",", java.util.Collections.nCopies(selected.size(), "?"));
         String predicate =
@@ -222,28 +184,6 @@ public class FinancialController {
 
     private static BigInteger exact(BigDecimal value) {
         return value.toBigIntegerExact();
-    }
-
-    private static LocalDate parseDate(String value) {
-        try {
-            if (!value.matches("\\d{4}-\\d{2}-\\d{2}")) throw new IllegalArgumentException();
-            return LocalDate.parse(value);
-        } catch (RuntimeException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid date");
-        }
-    }
-
-    private static List<String> parseAccounts(String value) {
-        if (value == null) return null;
-        if (value.isEmpty())
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid account selection");
-        List<String> ids = List.of(value.split(",", -1));
-        if (ids.size() > 4
-                || ids.stream().anyMatch(id -> !id.matches("[A-Za-z0-9_-]{1,64}"))
-                || ids.stream().distinct().count() != ids.size()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid account selection");
-        }
-        return ids;
     }
 
     private record Daily(LocalDate date, BigInteger cents) {}
