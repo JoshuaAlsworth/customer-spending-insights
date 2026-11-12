@@ -31,3 +31,11 @@ Live routes: CSRF bootstrap, login, session, logout, owned accounts and dashboar
 ## Kubernetes API manifest
 
 `infra/k8s/api.yaml` defines two API replicas, resource bounds, probes, a private Service and an `/api/v1` Ingress. It expects the same built Java image imported into k3d as `customer-spending-insights-api:latest` and a namespace Secret `csi-api-db` containing `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD` and `COOKIE_SECURE`. The manifest alone does not provide a Kubernetes database, autoscaling policy or performance profile. Do not commit a generated Secret or local database address.
+
+## Synthetic datasets
+
+`./dev data:generate demo generated-data/demo` creates the deterministic 20-customer demonstration CSVs and manifest. `./dev data:generate benchmark generated-data/benchmark` creates the separate benchmark profile after a free-disk preflight. Generated files stay under ignored `generated-data/`. `./dev data:validate generated-data/demo` checks hashes, canonical CSV structure, policy rules and relationships before import.
+
+For a deliberate import, first run `./dev provision <project>`, then `./dev data:import generated-data/demo <project> <project>`. The dataset directory may also be an absolute path, including one with spaces. The importer prompts for a synthetic login password (or reads `CSI_CUSTOMER_PASSWORD`) and requires an existing `.env`. It uses the database owner, validates the seed, streams each CSV into PostgreSQL staging while hashing the consumed bytes, and sends `COMMIT` only after every digest matches the manifest. An identical seed is a non-destructive no-op; a different seed is rejected on an occupied database. The operator must use a separately targeted environment; the importer does not reset data or start the normal API. `./dev data:demo <project> <project>` and `./dev data:benchmark <project> <project>` combine generation, validation and this explicit import; the repeated project name confirms the target. Do not use a synthetic password from a shared or exposed environment.
+
+The demo login IDs are `synthetic-00001` through `synthetic-00020`. Customer 1 has no accounts, customer 2 has an empty account, and customer 3 has pending-only activity. The benchmark is a synthetic load dataset, not a measurement of real customer behaviour. Neither profile seeds on `./dev up`.
