@@ -606,15 +606,7 @@ button:disabled {
     font-size: 23px;
   }
 }
-@media (max-width: 599px) {
-  .app-header {
-    min-height: 62px;
-    padding: 0 var(--space-4);
-    gap: var(--space-2);
-  }
-  .main-nav {
-    display: none;
-  }
+@media (max-width: 767px) {
   .head-right .head-btn {
     width: 36px;
     height: 36px;
@@ -634,6 +626,16 @@ button:disabled {
   .profile-menu summary {
     width: 36px;
     height: 36px;
+  }
+}
+@media (max-width: 599px) {
+  .app-header {
+    min-height: 62px;
+    padding: 0 var(--space-4);
+    gap: var(--space-2);
+  }
+  .main-nav {
+    display: none;
   }
   .shell {
     padding: 28px var(--space-4) 90px;
