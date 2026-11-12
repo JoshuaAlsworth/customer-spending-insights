@@ -1,10 +1,74 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, watch } from "vue";
+import { useQuery } from "@tanstack/vue-query";
+import { ApiError, getTransactions } from "../../api/client";
 import type { Dashboard } from "../../api/client";
 import { money } from "../../utils/money";
 
-const props = defineProps<{ dashboard: Dashboard; hidden: boolean }>();
-const emit = defineEmits<{ transactions: [] }>();
+const props = defineProps<{
+  dashboard: Dashboard;
+  hidden: boolean;
+  customerId: string;
+  accountIds: string[];
+  generation: number;
+  reconciling?: boolean;
+}>();
+const emit = defineEmits<{
+  transactions: [];
+  unauthorized: [];
+  revisionMismatch: [];
+  revisionAligned: [];
+}>();
+const recent = useQuery({
+  queryKey: computed(() => [
+    "recent-transactions",
+    props.customerId,
+    props.generation,
+    props.accountIds.join(","),
+    props.dashboard.scope.from,
+    props.dashboard.scope.to,
+    props.dashboard.dataset.instanceEpoch,
+  ]),
+  queryFn: ({ signal }) =>
+    getTransactions(
+      {
+        accountIds: props.accountIds,
+        from: props.dashboard.scope.from,
+        to: props.dashboard.scope.to,
+        status: "POSTED",
+        limit: 4,
+      },
+      signal,
+    ),
+  retry: false,
+  refetchOnWindowFocus: false,
+});
+watch(
+  [() => recent.data.value?.dataset, () => props.dashboard.dataset],
+  ([activity, dashboard]) => {
+    if (
+      activity &&
+      (activity.instanceEpoch !== dashboard.instanceEpoch ||
+        activity.customerRevision !== dashboard.customerRevision)
+    )
+      emit("revisionMismatch");
+    else if (activity) emit("revisionAligned");
+  },
+);
+watch(
+  () => recent.error.value,
+  (error) => {
+    if (error instanceof ApiError && error.status === 401) emit("unauthorized");
+  },
+);
+const recentMismatch = computed(
+  () =>
+    !!recent.data.value &&
+    (recent.data.value.dataset.instanceEpoch !==
+      props.dashboard.dataset.instanceEpoch ||
+      recent.data.value.dataset.customerRevision !==
+        props.dashboard.dataset.customerRevision),
+);
 const shown = (value: string, signed = false) =>
   props.hidden ? "••••" : money(value, signed);
 const hasNegativeCategory = computed(() =>
@@ -215,10 +279,45 @@ const trendHeight = (value: string) => {
           View all transactions
         </button>
       </div>
-      <p class="recent-empty">
-        Recent transaction details will be available with the transaction
-        explorer.
+      <p v-if="recentMismatch" class="recent-empty" role="status">
+        {{
+          reconciling
+            ? "Checking for updated activity…"
+            : "Updated activity is available. Refresh to align your view."
+        }}
       </p>
+      <p v-else-if="recent.isPending.value" class="recent-empty" role="status">
+        Loading recent transactions…
+      </p>
+      <p v-else-if="recent.isError.value" class="recent-empty" role="alert">
+        Recent transactions could not be loaded.
+        <button type="button" @click="recent.refetch()">Retry</button>
+      </p>
+      <p v-else-if="!recent.data.value?.items?.length" class="recent-empty">
+        No posted transactions in this period.
+      </p>
+      <div v-else class="recent-list">
+        <div
+          v-for="item in recent.data.value.items"
+          :key="item.id"
+          class="recent-row"
+        >
+          <span
+            >{{ item.merchantName || item.description
+            }}<small
+              >{{
+                new Date(item.postedAt!).toLocaleDateString("en-ZA", {
+                  timeZone: "Africa/Johannesburg",
+                })
+              }}
+              · {{ item.categoryCode || item.type }} · ••••
+              {{ item.maskedSuffix }}</small
+            ></span
+          ><strong>{{
+            hidden ? "••••" : money(item.amountMinor!, true)
+          }}</strong>
+        </div>
+      </div>
     </section>
   </div>
 </template>

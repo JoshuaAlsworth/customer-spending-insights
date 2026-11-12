@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc --noEmit && vite build",
-    "check": "vue-tsc --noEmit && eslint . && prettier --check .",
+    "check": "vue-tsc --noEmit && eslint . --max-warnings 0 && prettier --check .",
     "test": "vitest run",
     "api:generate": "openapi-typescript ../../contracts/openapi.yaml -o src/api/generated/schema.d.ts",
     "api:check": "openapi-typescript ../../contracts/openapi.yaml -o /tmp/csi-openapi-generated.d.ts && cmp src/api/generated/schema.d.ts /tmp/csi-openapi-generated.d.ts"

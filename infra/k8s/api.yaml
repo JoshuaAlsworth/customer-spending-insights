@@ -28,6 +28,10 @@ spec:
             - {name: http, containerPort: 8080}
           envFrom:
             - secretRef: {name: csi-api-db}
+          env:
+            - name: CURSOR_SECRET
+              valueFrom:
+                secretKeyRef: {name: csi-api-cursor, key: CURSOR_SECRET}
           resources:
             requests: {cpu: 100m, memory: 256Mi}
             limits: {cpu: 750m, memory: 768Mi}

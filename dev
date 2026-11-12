@@ -5,7 +5,7 @@ command=${1:-}
 case "$command" in
   up)
     if [ ! -f .env ]; then
-      echo 'Create .env with distinct generated POSTGRES_PASSWORD and API_DB_PASSWORD first.' >&2
+      echo 'Create .env with distinct generated POSTGRES_PASSWORD, API_DB_PASSWORD and CURSOR_SECRET first.' >&2
       exit 1
     fi
     docker compose up --build -d --wait
@@ -60,11 +60,18 @@ case "$command" in
     pnpm build
     ;;
   check)
+    (cd apps/api && ./gradlew spotlessCheck)
     (cd apps/api && ./gradlew test)
     pnpm --filter web api:check
     pnpm check
-    (cd tools/data-generator && uv run --locked ruff check . && uv run --locked pytest -q)
+    pnpm test
+    (cd tools/data-generator && uv run --locked ruff check . && uv run --locked ruff format --check . && uv run --locked pytest -q)
     docker compose --env-file .env.example config --quiet
+    ;;
+  format)
+    (cd apps/api && ./gradlew spotlessApply)
+    pnpm --filter web exec prettier --write .
+    (cd tools/data-generator && uv run --locked ruff format .)
     ;;
   test)
     (cd apps/api && ./gradlew clean test)
@@ -82,7 +89,7 @@ PY
     (cd tools/data-generator && uv run --locked pytest -q)
     ;;
   *)
-    echo 'Usage: ./dev {up|provision|fixture|down|build|check|test|data:demo|data:benchmark|data:generate|data:validate|data:import}' >&2
+    echo 'Usage: ./dev {up|provision|fixture|down|build|check|format|test|data:demo|data:benchmark|data:generate|data:validate|data:import}' >&2
     exit 2
     ;;
 esac
