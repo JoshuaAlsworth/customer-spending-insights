@@ -24,13 +24,18 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-session-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.83")
     runtimeOnly("org.postgresql:postgresql")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
+    testImplementation("org.testcontainers:testcontainers-postgresql:2.0.5")
+    testImplementation("org.testcontainers:testcontainers-junit-jupiter:2.0.5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    dependsOn(tasks.bootJar)
+    systemProperty("csi.test.jar", tasks.bootJar.get().archiveFile.get().asFile.absolutePath)
 }
