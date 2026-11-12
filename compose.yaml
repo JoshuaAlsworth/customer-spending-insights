@@ -72,6 +72,26 @@ services:
       db-migrate:
         condition: service_completed_successfully
 
+  db-sim-provision:
+    image: postgres:17.7-alpine@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2
+    profiles: ["simulator"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      SIMULATOR_DB_PASSWORD: ${SIMULATOR_DB_PASSWORD:-}
+      SIMULATOR_APPROVED_DATASET_ID: ${SIMULATOR_APPROVED_DATASET_ID:-}
+      SIMULATOR_APPROVED_SEED_HASH: ${SIMULATOR_APPROVED_SEED_HASH:-}
+      SIMULATOR_APPROVED_EPOCH: ${SIMULATOR_APPROVED_EPOCH:-}
+    volumes:
+      - ./tools/db/provision-simulator.sh:/provision-simulator.sh:ro
+    entrypoint: ["sh", "/provision-simulator.sh"]
+
+  db-sim:
+    image: postgres:17.7-alpine@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2
+    profiles: ["simulator"]
+    environment:
+      PGPASSWORD: ${SIMULATOR_DB_PASSWORD:-}
+    entrypoint: ["psql", "-X", "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1", "-h", "db", "-U", "customer_insights_simulator", "-d", "customer_insights", "-f", "-"]
+
   db-import:
     image: postgres:17.7-alpine@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2
     profiles: ["tools"]

@@ -217,6 +217,47 @@ def test_valid_import_replay_and_restricted_role(tmp_path, demo, target, monkeyp
         target,
         "SELECT (SELECT customer_revision FROM customers WHERE id='cu_00000'),(SELECT amount_minor FROM posted_entries WHERE id='pe_replay_test')",
     ).stdout.strip()
+    monkeypatch.setenv("SIMULATOR_DB_PASSWORD", uuid.uuid4().hex + uuid.uuid4().hex)
+    provisioned = subprocess.run(
+        ["./dev", "simulate:provision", target, target, "--dataset", str(demo)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert provisioned.returncode == 0, provisioned.stderr
+    for action in (
+        (
+            "pending",
+            "importpending",
+            "ac_00004_0",
+            "cedar-market",
+            "25000",
+            "2026-10-20T10:00:00+02:00",
+            "Import replay purchase",
+        ),
+        (
+            "post",
+            "importpost",
+            "sim_auth_importpending",
+            "24000",
+            "2026-10-20T11:00:00+02:00",
+        ),
+    ):
+        result = subprocess.run(
+            ["./dev", "simulate", target, target, *action],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+    simulation_before = query(
+        target,
+        "SELECT (SELECT customer_revision FROM customers WHERE id='cu_00004'),"
+        "(SELECT lifecycle_status FROM authorizations WHERE id='sim_auth_importpending'),"
+        "(SELECT amount_minor FROM posted_entries WHERE id='sim_entry_importpost'),"
+        "(SELECT count(*) FROM simulator_events WHERE event_id IN ('sim:event:importpending','sim:event:importpost'))",
+    ).stdout.strip()
+    assert simulation_before.endswith("|POSTED|-24000|2")
     run_cli(demo, target, monkeypatch)
     assert (
         query(
@@ -232,6 +273,33 @@ def test_valid_import_replay_and_restricted_role(tmp_path, demo, target, monkeyp
         ).stdout.strip()
         == before_replay
     )
+    assert (
+        query(
+            target,
+            "SELECT (SELECT customer_revision FROM customers WHERE id='cu_00004'),"
+            "(SELECT lifecycle_status FROM authorizations WHERE id='sim_auth_importpending'),"
+            "(SELECT amount_minor FROM posted_entries WHERE id='sim_entry_importpost'),"
+            "(SELECT count(*) FROM simulator_events WHERE event_id IN ('sim:event:importpending','sim:event:importpost'))",
+        ).stdout.strip()
+        == simulation_before
+    )
+    replayed = subprocess.run(
+        [
+            "./dev",
+            "simulate",
+            target,
+            target,
+            "post",
+            "importpost",
+            "sim_auth_importpending",
+            "24000",
+            "2026-10-20T11:00:00+02:00",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert replayed.returncode == 0 and json.loads(replayed.stdout)["replayed"] is True
     different = generate("demo", tmp_path / "different", seed=20261030)
     assert different["seed_content_hash"] != manifest["seed_content_hash"]
     with pytest.raises(ValueError, match="different seed"):

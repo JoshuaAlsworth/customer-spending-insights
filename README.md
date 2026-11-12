@@ -5,7 +5,7 @@ Synthetic ZAR spending dashboard with customer sign-in, exact posted-entry summa
 ## Requirements
 
 - Java 25, Node.js 24, pnpm 12.19.0, uv with Python 3.14, and Docker Desktop with Compose.
-- Copy `.env.example` to `.env` and set distinct generated `POSTGRES_PASSWORD` and `API_DB_PASSWORD` values. Set `CURSOR_SECRET` to the output of `openssl rand -hex 32`: exactly 64 hexadecimal characters encoding 32 random bytes. Keep `.env` private. Use one shared cursor secret across API replicas serving the same dataset; rotating it invalidates existing pagination cursors.
+- Copy `.env.example` to `.env` and set distinct generated `POSTGRES_PASSWORD` and `API_DB_PASSWORD` values. Set `CURSOR_SECRET` to the output of `openssl rand -hex 32`: exactly 64 hexadecimal characters encoding 32 random bytes. Keep `.env` private. For simulator use only, add a third independent generated `SIMULATOR_DB_PASSWORD` (for example, `openssl rand -hex 32`). Use one shared cursor secret across API replicas serving the same dataset; rotating it invalidates existing pagination cursors.
 
 ## Commands
 
@@ -16,6 +16,18 @@ Synthetic ZAR spending dashboard with customer sign-in, exact posted-entry summa
 - `./dev up` runs the controlled Flyway migration and role provisioner before starting the API and web containers. Open <http://127.0.0.1:8088>.
 - `./dev down` stops containers and preserves the PostgreSQL volume.
 - `./dev provision <project>` re-applies the API grants after migration or password changes without resetting data.
+
+### Restricted local transaction simulator
+
+On an explicitly chosen Compose project with an approved dataset, set an independent `SIMULATOR_DB_PASSWORD` in private `.env`, then run `./dev simulate:provision <project> <project> --dataset <validated-dataset-directory>` once. The command validates the canonical manifest and CSVs before binding their dataset ID and seed hash to the current database instance epoch. For the repository's isolated fixture only, use `CSI_ISOLATED_TEST_DB=1 ./dev simulate:provision <project> <project> --fixture`. Both project names must match. This only provisions the limited simulator role; normal dashboard startup does not require the simulator password. Use explicit Johannesburg timestamps within the dataset window (the fixed reference date is 2026-10-31):
+
+```sh
+./dev simulate <project> <project> pending <event-key> <account-id> <merchant-id> <authorized-cents> <occurred-at> '<description>'
+./dev simulate <project> <project> post <event-key> <authorization-id> <settled-cents> <posted-at>
+./dev simulate <project> <project> cancel <event-key> <authorization-id> <cancelled-at>
+```
+
+For example, `2026-10-30T10:00:00+02:00` is an eligible logical timestamp. Use a new stable event key for each operation; repeat the same command with the same key after an uncertain response to retrieve its committed result. A changed payload, including a changed cancellation timestamp, with the same key fails. Approval fails if the actual dataset identity differs from the trusted manifest or fixture; a replaced instance requires separate explicit approval. Posting can settle a different positive amount from the authorization. Results are printed as JSON with `replayed` set on retries. The simulator runs as a one-off local container, does not expose a port or customer-facing action, and is solely for synthetic assessment data, not payment processing. Run it only against an approved disposable or intended synthetic project, then manually refresh the customer dashboard.
 
 The API never migrates or imports data on startup. The migration job runs under the separate local database administrator identity; the API identity can read customer/financial rows and maintain sessions and login-attempt state, but cannot write financial tables or perform DDL. Only the web origin publishes a loopback port. Nginx exposes `/api/v1/` and denies other `/api` and `/actuator` paths. The loopback HTTP profile sets `COOKIE_SECURE=false`; it is not the final HTTPS acceptance profile.
 
