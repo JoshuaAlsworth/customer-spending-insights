@@ -27,6 +27,33 @@ case "$command" in
     docker compose -p "$2" run --rm db-provision
     docker compose -p "$2" exec -T db sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U customer_insights -d customer_insights -v ON_ERROR_STOP=1' < tools/db/test-fixture.sql
     ;;
+  data:demo|data:benchmark)
+    profile=${command#data:}
+    output="generated-data/$profile"
+    if [ "$#" -ne 3 ] || [ "$2" != "$3" ]; then
+      echo "Usage: ./dev $command <explicit-compose-project-name> <same-name-to-approve-target>" >&2
+      exit 2
+    fi
+    if [ ! -e "$output" ]; then
+      (cd tools/data-generator && uv run --locked python -m csi_data generate "$profile" "../../$output")
+    fi
+    (cd tools/data-generator && uv run --locked python -m csi_data validate "../../$output")
+    (cd tools/data-generator && uv run --locked python -m csi_data import "../../$output" --project "$2" --approve-target "$3")
+    ;;
+  data:generate)
+    [ "$#" -eq 3 ] || { echo 'Usage: ./dev data:generate <demo|benchmark> <output-directory>' >&2; exit 2; }
+    (cd tools/data-generator && uv run --locked python -m csi_data generate "$2" "../../$3")
+    ;;
+  data:validate)
+    [ "$#" -eq 2 ] || { echo 'Usage: ./dev data:validate <output-directory>' >&2; exit 2; }
+    (cd tools/data-generator && uv run --locked python -m csi_data validate "../../$2")
+    ;;
+  data:import)
+    [ "$#" -eq 4 ] || { echo 'Usage: ./dev data:import <output-directory> <compose-project-name> <same-name-to-approve-target>' >&2; exit 2; }
+    [ -n "$3" ] && [ "$3" = "$4" ] || { echo 'Explicit target approval must match the Compose project' >&2; exit 2; }
+    dataset_path=$(cd "$2" 2>/dev/null && pwd -P) || { echo 'Invalid dataset directory' >&2; exit 2; }
+    (cd tools/data-generator && uv run --locked python -m csi_data import "$dataset_path" --project "$3" --approve-target "$4")
+    ;;
   down) docker compose down ;;
   build)
     (cd apps/api && ./gradlew bootJar)
@@ -55,7 +82,7 @@ PY
     (cd tools/data-generator && uv run --locked pytest -q)
     ;;
   *)
-    echo 'Usage: ./dev {up|provision|fixture|down|build|check|test}' >&2
+    echo 'Usage: ./dev {up|provision|fixture|down|build|check|test|data:demo|data:benchmark|data:generate|data:validate|data:import}' >&2
     exit 2
     ;;
 esac

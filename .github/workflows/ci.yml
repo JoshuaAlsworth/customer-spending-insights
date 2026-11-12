@@ -25,6 +25,10 @@ jobs:
       - run: corepack enable && pnpm install --frozen-lockfile
       - run: python -m pip install uv==0.11.28
       - run: uv python install 3.14.6
+      - name: Prepare isolated database credentials
+        run: |
+          umask 077
+          printf 'POSTGRES_PASSWORD=%s\nAPI_DB_PASSWORD=%s\n' "$(openssl rand -hex 24)" "$(openssl rand -hex 24)" > .env
       - run: ./dev check
       - run: ./dev test
       - run: ./dev build

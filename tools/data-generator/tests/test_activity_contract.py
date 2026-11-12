@@ -76,8 +76,13 @@ def test_valid_typed_activity_variants() -> None:
     invalid_posted["amountMinor"] = "24000"
     assert not validator.is_valid(invalid_posted)
     refund = deepcopy(posted)
-    refund.update(type="SPEND_REFUND", amountMinor="24000", originalActivityId="pe_purchase",
-                  authorizedAmountMinor=None, authorizationActivityId=None)
+    refund.update(
+        type="SPEND_REFUND",
+        amountMinor="24000",
+        originalActivityId="pe_purchase",
+        authorizedAmountMinor=None,
+        authorizationActivityId=None,
+    )
     assert validator.is_valid(refund)
     refund["originalActivityId"] = None
     assert not validator.is_valid(refund)
@@ -88,9 +93,14 @@ def test_activity_filter_contract_has_type_and_bounded_cursor_page() -> None:
         parameter["name"]: parameter
         for parameter in contract["paths"]["/api/v1/transactions"]["get"]["parameters"]
     }
-    assert parameters["type"]["schema"]["$ref"] == "#/components/schemas/TransactionType"
+    assert (
+        parameters["type"]["schema"]["$ref"] == "#/components/schemas/TransactionType"
+    )
     assert parameters["status"]["schema"]["enum"] == [
-        "ALL", "PENDING", "POSTED", "CANCELLED"
+        "ALL",
+        "PENDING",
+        "POSTED",
+        "CANCELLED",
     ]
     assert parameters["limit"]["schema"]["maximum"] == 100
     assert "cursor" in parameters
