@@ -50,7 +50,9 @@ it("shows exact authoritative amounts and hides every accessible amount", () => 
     props: { dashboard, hidden: false, ...previewProps },
     global,
   });
-  expect(wrapper.text()).toContain("R850.00");
+  expect(wrapper.get(".summary-card.primary .metric-value").text()).toBe(
+    "+R850.00",
+  );
   expect(wrapper.text()).toContain("+R17,150.00");
   expect(wrapper.text()).toContain("−R200.00");
   wrapper.setProps({ hidden: true });
@@ -60,6 +62,35 @@ it("shows exact authoritative amounts and hides every accessible amount", () => 
     expect(wrapper.text()).toContain("Amounts hidden");
   });
 });
+
+it.each([
+  ["85000", "+R850.00", false],
+  ["-15000", "−R150.00", true],
+  ["0", "R0.00", false],
+] as const)(
+  "renders the signed Money out value %s",
+  (minor, expected, negative) => {
+    const wrapper = mount(OverviewView, {
+      props: {
+        dashboard: {
+          ...dashboard,
+          summary: { ...dashboard.summary, netSpendingMinor: minor },
+        },
+        hidden: false,
+        ...previewProps,
+      },
+      global,
+    });
+    expect(wrapper.get(".summary-card.primary .metric-value").text()).toBe(
+      expected,
+    );
+    expect(wrapper.get(".summary-card.primary").text()).toContain(expected);
+    expect(wrapper.find(".summary-card.primary .metric-note").exists()).toBe(
+      negative,
+    );
+    wrapper.unmount();
+  },
+);
 
 it("uses one visual scale for equal positive and negative trend buckets", () => {
   const signed = {
@@ -78,5 +109,17 @@ it("uses one visual scale for equal positive and negative trend buckets", () => 
     wrapper.findAll(".trend-bar").map((bar) => bar.attributes("style")),
   ).toEqual(["height: 45%;", "height: 45%;", "height: 0%;"]);
   expect(wrapper.text()).toContain("−R100.00");
+  wrapper.unmount();
+});
+
+it("opens transactions with the selected category code", async () => {
+  const wrapper = mount(OverviewView, {
+    props: { dashboard, hidden: false, ...previewProps },
+    global,
+  });
+  await wrapper
+    .get('button[aria-label="Filter transactions by Health"]')
+    .trigger("click");
+  expect(wrapper.emitted("category")?.[0]).toEqual(["HEALTH"]);
   wrapper.unmount();
 });

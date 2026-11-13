@@ -32,12 +32,15 @@ jobs:
       - run: ./dev check
       - run: ./dev test
       - run: ./dev build
-      - name: Browser account, transaction and simulator checks
+      - name: Browser account, money, navigation, category, transaction and simulator checks
         run: |
           CSI_ISOLATED_TEST_DB=1 ./dev fixture csi-ci-browser
           docker compose -p csi-ci-browser up --build -d --wait web
           uv run --no-project --with playwright==1.65.1 python -m playwright install --with-deps chromium
           CSI_COMPOSE_PROJECT=csi-ci-browser uv run --no-project --with playwright==1.65.1 python tools/browser-tests/account_balances.py
+          CSI_COMPOSE_PROJECT=csi-ci-browser uv run --no-project --with playwright==1.65.1 python tools/browser-tests/money_signs.py
+          CSI_COMPOSE_PROJECT=csi-ci-browser uv run --no-project --with playwright==1.65.1 python tools/browser-tests/mobile_navigation.py
+          CSI_COMPOSE_PROJECT=csi-ci-browser uv run --no-project --with playwright==1.65.1 python tools/browser-tests/category_activation.py
           CSI_COMPOSE_PROJECT=csi-ci-browser uv run --no-project --with playwright==1.65.1 python tools/browser-tests/transaction_history.py
           CSI_COMPOSE_PROJECT=csi-ci-browser uv run --no-project --with playwright==1.65.1 python tools/browser-tests/simulator_lifecycle.py
       - name: Remove browser fixture

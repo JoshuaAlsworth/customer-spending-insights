@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { ApiError, getTransactions } from "../../api/client";
 import type { Dashboard } from "../../api/client";
@@ -15,6 +15,8 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   transactions: [];
+  open: [id: string];
+  category: [code: string];
   unauthorized: [];
   revisionMismatch: [];
   revisionAligned: [];
@@ -71,6 +73,61 @@ const recentMismatch = computed(
 );
 const shown = (value: string, signed = false) =>
   props.hidden ? "••••" : money(value, signed);
+const categoriesExpanded = ref(false);
+const orderedCategories = computed(() =>
+  [...props.dashboard.categories].sort((left, right) => {
+    const a = BigInt(left.netSpendingMinor);
+    const b = BigInt(right.netSpendingMinor);
+    return a === b
+      ? left.displayName.localeCompare(right.displayName)
+      : a > b
+        ? -1
+        : 1;
+  }),
+);
+const shownCategories = orderedCategories;
+const recentCategory = (code: string | null, type: string) =>
+  props.dashboard.categories.find((item) => item.categoryCode === code)
+    ?.displayName ??
+  type
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/^./, (letter) => letter.toUpperCase());
+const recentDate = (value: string) =>
+  new Date(value).toLocaleDateString("en-ZA", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Africa/Johannesburg",
+  });
+const trendPeak = computed(() =>
+  props.dashboard.trend.reduce<(typeof props.dashboard.trend)[number] | null>(
+    (peak, bucket) =>
+      BigInt(bucket.netSpendingMinor) > BigInt(peak?.netSpendingMinor ?? "0")
+        ? bucket
+        : peak,
+    null,
+  ),
+);
+const trendAxis = computed(() => {
+  const max = trendBound.value;
+  if (!max) return ["R0"];
+  return [4n, 3n, 2n, 1n, 0n].map((part) =>
+    money(((max * part) / 4n).toString()).replace(/\.00$/, ""),
+  );
+});
+const trendLabel = (from: string, to: string) =>
+  from === to
+    ? shortDate(from)
+    : from.slice(0, 7) === to.slice(0, 7)
+      ? `${Number(from.slice(8))}–${shortDate(to)}`
+      : `${shortDate(from)}–${shortDate(to)}`;
+const shortDate = (value: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T12:00:00Z`));
 const hasNegativeCategory = computed(() =>
   props.dashboard.categories.some((item) => BigInt(item.netSpendingMinor) < 0n),
 );
@@ -109,9 +166,25 @@ const maxTrendMagnitude = computed(() =>
     return value > max ? value : max;
   }, 0n),
 );
+const trendBound = computed(() => {
+  const max = maxTrendMagnitude.value;
+  if (!max) return 0n;
+  const raw = (max + 3n) / 4n;
+  let base = 1n;
+  while (base * 10n < raw) base *= 10n;
+  const step =
+    raw <= base
+      ? base
+      : raw <= base * 2n
+        ? base * 2n
+        : raw <= base * 5n
+          ? base * 5n
+          : base * 10n;
+  return ((max + step - 1n) / step) * step;
+});
 const trendHeight = (value: string) => {
   const amount = BigInt(value);
-  const maximum = maxTrendMagnitude.value;
+  const maximum = trendBound.value;
   if (amount === 0n || maximum === 0n) return "0%";
   const magnitude = amount < 0n ? -amount : amount;
   const capacity = hasNegativeTrend.value ? 45 : 90;
@@ -125,11 +198,8 @@ const trendHeight = (value: string) => {
       <article class="summary-card primary">
         <p class="metric-name">Money out</p>
         <div class="metric-value">
-          {{ shown(dashboard.summary.netSpendingMinor) }}
+          {{ shown(dashboard.summary.netSpendingMinor, true) }}
         </div>
-        <p class="metric-note">
-          Posted outgoings net of refunds. Own-account transfers excluded.
-        </p>
         <p
           v-if="!hidden && BigInt(dashboard.summary.netSpendingMinor) < 0n"
           class="metric-note"
@@ -140,7 +210,7 @@ const trendHeight = (value: string) => {
       <article class="summary-card">
         <p class="metric-name">Money in</p>
         <div class="metric-value">
-          {{ shown(dashboard.summary.incomeMinor) }}
+          {{ shown(dashboard.summary.incomeMinor, true) }}
         </div>
         <p
           v-if="!hidden && BigInt(dashboard.summary.incomeMinor) < 0n"
@@ -150,7 +220,7 @@ const trendHeight = (value: string) => {
         </p>
       </article>
       <article class="summary-card">
-        <p class="metric-name">Change this period</p>
+        <p class="metric-name">Net movement</p>
         <div class="metric-value">
           {{ shown(dashboard.summary.netMovementMinor, true) }}
         </div>
@@ -166,7 +236,10 @@ const trendHeight = (value: string) => {
       </article>
     </section>
     <section class="analysis" aria-label="Spending analysis">
-      <article class="panel">
+      <article
+        class="panel"
+        :class="{ 'categories-collapsed': !categoriesExpanded }"
+      >
         <div class="section-head">
           <h2>Where money went</h2>
         </div>
@@ -175,12 +248,14 @@ const trendHeight = (value: string) => {
           No posted spending or refunds in this period.
         </p>
         <template v-else>
-          <div class="category-rows" role="list">
-            <div
-              v-for="item in dashboard.categories"
+          <div class="category-rows">
+            <button
+              v-for="item in shownCategories"
               :key="item.categoryCode"
               class="category-row"
-              role="listitem"
+              type="button"
+              :aria-label="`Filter transactions by ${item.displayName}`"
+              @click="emit('category', item.categoryCode)"
             >
               <span class="category-name">{{ item.displayName }}</span>
               <span class="signed-track" aria-hidden="true"
@@ -194,8 +269,22 @@ const trendHeight = (value: string) => {
                 :class="{ negative: BigInt(item.netSpendingMinor) < 0n }"
                 >{{ money(item.netSpendingMinor) }}</span
               >
-            </div>
+            </button>
           </div>
+          <div class="chart-key"><span aria-hidden="true">│</span> Zero</div>
+          <button
+            v-if="dashboard.categories.length > 4"
+            type="button"
+            class="category-toggle"
+            :aria-expanded="categoriesExpanded"
+            @click="categoriesExpanded = !categoriesExpanded"
+          >
+            {{
+              categoriesExpanded
+                ? "Show fewer categories"
+                : "View all categories"
+            }}
+          </button>
           <p v-if="hasNegativeCategory" class="negative-note">
             Negative amounts mean refunds exceeded spending.
           </p>
@@ -204,9 +293,9 @@ const trendHeight = (value: string) => {
       <article class="panel">
         <div class="section-head">
           <h2>Spending over time</h2>
-          <span class="section-meta"
-            >{{ dashboard.scope.from }} – {{ dashboard.scope.to }}</span
-          >
+          <span class="section-meta">{{
+            dashboard.trend.length < 3 ? "Monthly totals" : "Weekly totals"
+          }}</span>
         </div>
         <p v-if="hidden" class="masked-visual">Amounts hidden</p>
         <p v-else-if="!dashboard.trend.length" class="compact-empty">
@@ -216,25 +305,32 @@ const trendHeight = (value: string) => {
           <div
             class="trend-chart"
             :class="{ signed: hasNegativeTrend }"
-            aria-hidden="true"
+            role="group"
+            aria-label="Spending by period"
           >
+            <div class="trend-axis" aria-hidden="true">
+              <span v-for="tick in trendAxis" :key="tick">{{ tick }}</span>
+            </div>
             <div
               class="trend-plot"
               :style="{
                 gridTemplateColumns: `repeat(${dashboard.trend.length}, minmax(0, 1fr))`,
               }"
             >
-              <div
+              <button
                 v-for="bucket in dashboard.trend"
                 :key="bucket.from"
                 class="trend-column"
+                type="button"
+                :aria-label="`${trendLabel(bucket.from, bucket.to)}, ${money(bucket.netSpendingMinor)}`"
+                :title="`${trendLabel(bucket.from, bucket.to)} · ${money(bucket.netSpendingMinor)}`"
               >
                 <span
                   class="trend-bar"
                   :class="{ negative: BigInt(bucket.netSpendingMinor) < 0n }"
                   :style="{ height: trendHeight(bucket.netSpendingMinor) }"
                 />
-              </div>
+              </button>
             </div>
             <div
               class="trend-labels"
@@ -242,10 +338,17 @@ const trendHeight = (value: string) => {
                 gridTemplateColumns: `repeat(${dashboard.trend.length}, minmax(0, 1fr))`,
               }"
             >
-              <span v-for="bucket in dashboard.trend" :key="bucket.from"
-                >{{ bucket.from.slice(5) }}–{{ bucket.to.slice(5) }}</span
-              >
+              <span v-for="bucket in dashboard.trend" :key="bucket.from">{{
+                trendLabel(bucket.from, bucket.to)
+              }}</span>
             </div>
+          </div>
+          <div v-if="trendPeak" class="trend-peak">
+            <span>Highest spending period</span
+            ><strong
+              >{{ trendLabel(trendPeak.from, trendPeak.to) }} ·
+              {{ money(trendPeak.netSpendingMinor) }}</strong
+            >
           </div>
           <details class="exact-values">
             <summary>View exact values</summary>
@@ -272,9 +375,9 @@ const trendHeight = (value: string) => {
     </section>
     <section class="transactions" aria-labelledby="recent-title">
       <div class="recent-heading">
-        <h2 id="recent-title">Recent posted transactions</h2>
+        <h2 id="recent-title">Recent posted</h2>
         <button type="button" class="text-link" @click="emit('transactions')">
-          View all transactions
+          View all
         </button>
       </div>
       <p v-if="recentMismatch" class="recent-empty" role="status">
@@ -294,28 +397,37 @@ const trendHeight = (value: string) => {
       <p v-else-if="!recent.data.value?.items?.length" class="recent-empty">
         No posted transactions in this period.
       </p>
-      <div v-else class="recent-list">
-        <div
-          v-for="item in recent.data.value.items"
-          :key="item.id"
-          class="recent-row"
-        >
-          <span
-            >{{ item.merchantName || item.description
-            }}<small
-              >{{
-                new Date(item.postedAt!).toLocaleDateString("en-ZA", {
-                  timeZone: "Africa/Johannesburg",
-                })
-              }}
-              · {{ item.categoryCode || item.type }} · ••••
-              {{ item.maskedSuffix }}</small
-            ></span
-          ><strong>{{
-            hidden ? "••••" : money(item.amountMinor!, true)
-          }}</strong>
-        </div>
-      </div>
+      <table v-else class="recent-table">
+        <thead>
+          <tr>
+            <th scope="col">Posting date</th>
+            <th scope="col">Description</th>
+            <th scope="col">Category / type</th>
+            <th scope="col" class="amount">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in recent.data.value.items" :key="item.id">
+            <td>{{ recentDate(item.postedAt!) }}</td>
+            <td>
+              <button type="button" @click="emit('open', item.id)">
+                {{ item.merchantName || item.description }}
+              </button>
+            </td>
+            <td>{{ recentCategory(item.categoryCode, item.type) }}</td>
+            <td
+              class="amount"
+              :class="{ credit: BigInt(item.amountMinor!) > 0n }"
+            >
+              {{ hidden ? "••••" : money(item.amountMinor!, true) }}
+            </td>
+            <td class="mobile-meta">
+              {{ recentDate(item.postedAt!) }} ·
+              {{ recentCategory(item.categoryCode, item.type) }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </section>
   </div>
 </template>

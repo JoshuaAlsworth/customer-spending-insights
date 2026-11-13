@@ -118,9 +118,10 @@ it("keeps fixed-date balances while account and period selection scope both rout
     const accountRequests = requests.filter((path) =>
       path.endsWith("/accounts"),
     ).length;
+    await wrapper.get(".period-popover button:last-of-type").trigger("click");
     await wrapper.get("#from").setValue("2026-09-01");
     await wrapper.get("#to").setValue("2026-09-30");
-    await wrapper.get(".global-filters").trigger("submit");
+    await wrapper.get(".custom-range").trigger("submit");
     await flushPromises();
     expect(requests.filter((path) => path.endsWith("/accounts"))).toHaveLength(
       accountRequests,
@@ -132,18 +133,14 @@ it("keeps fixed-date balances while account and period selection scope both rout
           path.includes("accountIds=savings"),
       ),
     ).toBe(true);
-    expect(wrapper.text()).toContain("Posted balances as at 31 Oct 2026");
+    expect(wrapper.text()).toContain("Posted balance · 31 Oct 2026");
     expect(wrapper.text()).toContain("R3,500.00");
 
     await wrapper.get(".main-nav button:last-child").trigger("click");
     await flushPromises();
-    expect(
-      (wrapper.get("#transaction-account").element as HTMLSelectElement).value,
-    ).toBe("savings");
-    expect((wrapper.get("#from").element as HTMLInputElement).value).toBe(
-      "2026-09-01",
-    );
-    expect(wrapper.text()).toContain("Posted balance as at 31 Oct 2026");
+    expect(wrapper.get(".account-button").text()).toContain("Savings");
+    expect(wrapper.get(".period-picker").text()).toContain("1–30 Sept 2026");
+    expect(wrapper.text()).toContain("Posted balance · 31 Oct 2026");
     expect(wrapper.text()).toContain("R3,500.00");
   } finally {
     wrapper.unmount();

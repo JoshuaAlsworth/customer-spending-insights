@@ -52,9 +52,9 @@ it("shows the selected fixed-date balance on Transactions with one shared select
     props: { response, accountId: "everyday", hidden: false, compact: true },
   });
   expect(wrapper.text()).toContain("R22,150.00");
-  expect(wrapper.text()).not.toContain("R25,650.00");
-  expect(wrapper.findAll('input[type="radio"]')).toHaveLength(0);
-  await wrapper.get("#transaction-account").setValue("savings");
+  expect(wrapper.get(".account-button").text()).not.toContain("R25,650.00");
+  expect(wrapper.findAll('input[type="radio"]')).toHaveLength(3);
+  await wrapper.get('input[value="savings"]').setValue();
   expect(wrapper.emitted("update:accountId")?.[0]).toEqual(["savings"]);
 });
 

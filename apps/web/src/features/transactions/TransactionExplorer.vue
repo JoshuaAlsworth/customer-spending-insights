@@ -6,6 +6,7 @@ import {
   getTransactions,
   getTransaction,
   type Activity,
+  type Account,
   type CategoryCode,
   type TransactionType,
 } from "../../api/client";
@@ -25,6 +26,7 @@ const props = defineProps<{
   reconciling?: boolean;
   referenceDate: string;
   detailId: string | null;
+  accounts?: Account[];
 }>();
 const emit = defineEmits<{
   open: [id: string];
@@ -34,6 +36,7 @@ const emit = defineEmits<{
   revisionAligned: [];
 }>();
 const searchInput = ref("");
+const filterMenu = ref<HTMLDetailsElement | null>(null);
 const search = ref("");
 const status = ref<"ALL" | "PENDING" | "POSTED" | "CANCELLED">("ALL");
 const type = ref<TransactionType | "">("");
@@ -75,6 +78,13 @@ const categories: CategoryCode[] = [
   "BANK_FEES",
   "UNCATEGORIZED",
 ];
+function applyCategory(code: string) {
+  if (!categories.includes(code as CategoryCode)) return;
+  category.value = code as CategoryCode;
+  pageCursors.value = [undefined];
+  page.value = 0;
+}
+defineExpose({ applyCategory });
 const label = (value: string) =>
   value in categoryPolicy.categories
     ? categoryPolicy.categories[value as CategoryCode]
@@ -98,6 +108,17 @@ const date = (item: Activity) =>
     year: "numeric",
     timeZone: "Africa/Johannesburg",
   });
+const detailDate = (value: string) =>
+  new Date(value).toLocaleDateString("en-ZA", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Africa/Johannesburg",
+  });
+const accountName = (item: Activity) => {
+  const account = props.accounts?.find((entry) => entry.id === item.accountId);
+  return `${account?.alias ?? "Account"} · •• ${item.maskedSuffix}`;
+};
 const query = useQuery({
   queryKey: computed(() => [
     "transactions",
@@ -195,6 +216,15 @@ const queryMismatch = computed(
       query.data.value.dataset.customerRevision !== props.dashboardRevision),
 );
 const rows = computed(() => query.data.value?.items ?? []);
+const groupedRows = computed(() =>
+  (["PENDING", "POSTED", "CANCELLED"] as const)
+    .map((entry) => ({
+      status: entry,
+      title: `${label(entry)} transactions`,
+      items: rows.value.filter((item) => item.status === entry),
+    }))
+    .filter((group) => group.items.length),
+);
 const normalizeSearch = (value: string) =>
   value
     .replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "")
@@ -291,6 +321,7 @@ function reset() {
   status.value = "ALL";
   type.value = "";
   category.value = "";
+  if (filterMenu.value) filterMenu.value.open = false;
 }
 function next() {
   if (!query.data.value?.nextCursor) return;
@@ -374,33 +405,38 @@ onBeforeUnmount(() => {
             searchError ? 'transaction-search-error' : undefined
           "
       /></label>
-      <label
-        >Status<select v-model="status">
-          <option value="ALL">All statuses</option>
-          <option value="PENDING">Pending</option>
-          <option value="POSTED">Posted</option>
-          <option value="CANCELLED">Cancelled</option>
-        </select></label
-      >
-      <label
-        >Type<select v-model="type">
-          <option value="">All types</option>
-          <option v-for="entry in types" :key="entry" :value="entry">
-            {{ label(entry) }}
-          </option>
-        </select></label
-      >
-      <label
-        >Category<select v-model="category">
-          <option value="">All categories</option>
-          <option v-for="entry in categories" :key="entry" :value="entry">
-            {{ label(entry) }}
-          </option>
-        </select></label
-      >
-      <button type="button" class="text-link" @click="reset">
-        Reset filters
-      </button>
+      <details ref="filterMenu" class="transaction-filter-menu">
+        <summary class="select-button">Filters</summary>
+        <div class="transaction-filter-popover">
+          <label
+            >Status<select v-model="status">
+              <option value="ALL">All statuses</option>
+              <option value="PENDING">Pending</option>
+              <option value="POSTED">Posted</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select></label
+          >
+          <label
+            >Type<select v-model="type">
+              <option value="">All types</option>
+              <option v-for="entry in types" :key="entry" :value="entry">
+                {{ label(entry) }}
+              </option>
+            </select></label
+          >
+          <label
+            >Category<select v-model="category">
+              <option value="">All categories</option>
+              <option v-for="entry in categories" :key="entry" :value="entry">
+                {{ label(entry) }}
+              </option>
+            </select></label
+          >
+          <button type="button" class="text-link" @click="reset">
+            Reset filters
+          </button>
+        </div>
+      </details>
     </div>
     <p
       v-if="searchError"
@@ -474,20 +510,32 @@ onBeforeUnmount(() => {
         </button>
       </p>
       <div v-else class="activity-surface">
-        <div class="activity-table-wrap">
+        <section
+          v-for="group in groupedRows"
+          :key="group.status"
+          class="activity-section"
+          :aria-label="group.title"
+        >
+          <h2 class="subsection-title">{{ group.title }}</h2>
           <table class="activity-table">
             <thead>
               <tr>
-                <th scope="col">Transaction</th>
-                <th scope="col">Date</th>
-                <th scope="col">Type / category</th>
-                <th scope="col">Status</th>
-                <th scope="col">Account</th>
+                <th scope="col">
+                  {{
+                    group.status === "POSTED" ? "Posting date" : "Authorised"
+                  }}
+                </th>
+                <th scope="col">Description</th>
+                <th scope="col">
+                  {{ group.status === "POSTED" ? "Category / type" : "Type" }}
+                </th>
+                <th v-if="!accountIds.length" scope="col">Account</th>
                 <th scope="col" class="amount">Amount</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in rows" :key="item.id">
+              <tr v-for="item in group.items" :key="item.id">
+                <td>{{ date(item) }}</td>
                 <td>
                   <button
                     type="button"
@@ -497,16 +545,10 @@ onBeforeUnmount(() => {
                     {{ item.merchantName || item.description }}
                   </button>
                 </td>
-                <td>{{ date(item) }}</td>
                 <td>{{ label(item.categoryCode || item.type) }}</td>
-                <td>
-                  <span
-                    class="activity-status"
-                    :class="item.status.toLowerCase()"
-                    >{{ label(item.status) }}</span
-                  >
+                <td v-if="!accountIds.length" class="account-cell">
+                  •••• {{ item.maskedSuffix }}
                 </td>
-                <td>•••• {{ item.maskedSuffix }}</td>
                 <td
                   class="amount"
                   :class="{
@@ -526,38 +568,16 @@ onBeforeUnmount(() => {
                     }}</small
                   >
                 </td>
+                <td class="mobile-meta">
+                  {{ date(item) }} · {{ label(item.categoryCode || item.type)
+                  }}<span v-if="!accountIds.length">
+                    · •••• {{ item.maskedSuffix }}</span
+                  >
+                </td>
               </tr>
             </tbody>
           </table>
-        </div>
-        <div class="activity-cards">
-          <button
-            v-for="item in rows"
-            :key="item.id"
-            type="button"
-            class="activity-card"
-            @click="open(item.id)"
-          >
-            <span class="activity-card-top"
-              ><strong>{{ item.merchantName || item.description }}</strong
-              ><strong>{{ amount(item) }}</strong></span
-            ><span
-              >{{ date(item) }} ·
-              {{ label(item.categoryCode || item.type) }}</span
-            ><span
-              ><span
-                class="activity-status"
-                :class="item.status.toLowerCase()"
-                >{{ label(item.status) }}</span
-              >
-              · •••• {{ item.maskedSuffix }}</span
-            ><span v-if="item.recordKind === 'AUTHORIZATION'">{{
-              item.status === "PENDING"
-                ? "Authorised, not posted"
-                : "Cancelled, not posted"
-            }}</span>
-          </button>
-        </div>
+        </section>
       </div>
       <div v-if="rows.length || page" class="activity-pagination">
         <button type="button" :disabled="!page" @click="previous">
@@ -579,19 +599,37 @@ onBeforeUnmount(() => {
         aria-modal="true"
         aria-labelledby="detail-title"
       >
-        <button type="button" class="detail-close" @click="close">Close</button>
+        <div class="detail-heading">
+          <h2 id="detail-title">Transaction details</h2>
+          <button
+            type="button"
+            class="detail-close"
+            aria-label="Close transaction details"
+            @click="close"
+          >
+            ×
+          </button>
+        </div>
         <p v-if="detail.isPending.value" role="status">Loading transaction…</p>
         <p v-else-if="detail.isError.value" role="alert">
           Transaction details unavailable.
           <button type="button" @click="detail.refetch()">Retry</button>
         </p>
         <template v-else-if="detail.data.value">
-          <h2 id="detail-title">
+          <p class="detail-amount">{{ amount(detail.data.value) }}</p>
+          <p class="detail-merchant">
             {{
               detail.data.value.merchantName || detail.data.value.description
             }}
-          </h2>
-          <p class="detail-amount">{{ amount(detail.data.value) }}</p>
+          </p>
+          <div class="detail-badges">
+            <span
+              class="status-badge"
+              :class="detail.data.value.status.toLowerCase()"
+              >{{ label(detail.data.value.status) }}</span
+            >
+            <span class="detail-type">{{ label(detail.data.value.type) }}</span>
+          </div>
           <p v-if="detail.data.value.recordKind === 'AUTHORIZATION'">
             {{
               detail.data.value.status === "PENDING"
@@ -600,41 +638,22 @@ onBeforeUnmount(() => {
             }}
           </p>
           <dl>
-            <dt>Status</dt>
-            <dd>{{ label(detail.data.value.status) }}</dd>
-            <dt>Type</dt>
-            <dd>{{ label(detail.data.value.type) }}</dd>
             <dt>Account</dt>
-            <dd>•••• {{ detail.data.value.maskedSuffix }}</dd>
-            <dt>Description</dt>
-            <dd>{{ detail.data.value.description }}</dd>
-            <dt>{{ detail.data.value.postedAt ? "Posted" : "Occurred" }}</dt>
-            <dd>
-              {{
-                new Date(
-                  (detail.data.value.postedAt || detail.data.value.occurredAt)!,
-                ).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg" })
-              }}
-            </dd>
-            <template
-              v-if="
-                detail.data.value.recordKind === 'POSTED_ENTRY' &&
-                detail.data.value.occurredAt
-              "
-            >
-              <dt>Occurred</dt>
-              <dd>
-                {{
-                  new Date(detail.data.value.occurredAt).toLocaleString(
-                    "en-ZA",
-                    { timeZone: "Africa/Johannesburg" },
-                  )
-                }}
-              </dd>
+            <dd>{{ accountName(detail.data.value) }}</dd>
+            <template v-if="detail.data.value.occurredAt">
+              <dt>Transaction date</dt>
+              <dd>{{ detailDate(detail.data.value.occurredAt) }}</dd>
+            </template>
+            <template v-if="detail.data.value.postedAt">
+              <dt>Posting date</dt>
+              <dd>{{ detailDate(detail.data.value.postedAt) }}</dd>
             </template>
             <template v-if="detail.data.value.categoryCode">
               <dt>Category</dt>
               <dd>{{ label(detail.data.value.categoryCode) }}</dd> </template
+            ><template v-if="detail.data.value.description">
+              <dt>Original description</dt>
+              <dd>{{ detail.data.value.description }}</dd> </template
             ><template
               v-if="
                 detail.data.value.recordKind === 'POSTED_ENTRY' &&

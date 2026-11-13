@@ -119,8 +119,143 @@ it("renders the server dashboard after session and account lookup", async () => 
       (call[0] as Request).url.includes("/api/v1/dashboard"),
     ),
   ).toBe(true);
+  expect(
+    fetch.mock.calls.some((call) =>
+      (call[0] as Request).url.includes("/api/v1/dashboard?accountIds=a1"),
+    ),
+  ).toBe(true);
   wrapper.unmount();
   vi.unstubAllGlobals();
+});
+
+it("applies a chart category again after reset without changing the spending scope", async () => {
+  location.hash = "#overview";
+  const dashboard = {
+    scope: { from: "2026-10-01", to: "2026-10-31", accountIds: ["a1"] },
+    summary: {
+      incomeMinor: "0",
+      grossSpendingMinor: "85000",
+      spendingCreditsMinor: "0",
+      netSpendingMinor: "85000",
+      ownAccountFlowMinor: "0",
+      netMovementMinor: "-85000",
+    },
+    categories: [
+      {
+        categoryCode: "GROCERIES",
+        displayName: "Groceries",
+        netSpendingMinor: "60000",
+      },
+      {
+        categoryCode: "HEALTH",
+        displayName: "Health",
+        netSpendingMinor: "25000",
+      },
+    ],
+    trend: [],
+    dataset: {
+      datasetId: "test",
+      instanceEpoch: "epoch",
+      customerRevision: 0,
+      referenceDate: "2026-10-31",
+    },
+  };
+  const activityRequests: URL[] = [];
+  const fetch = vi.fn(async (request: Request) => {
+    const url = new URL(request.url);
+    const body = url.pathname.endsWith("/auth/session")
+      ? {
+          customerId: "c1",
+          displayName: "Customer",
+          expiresAtEpochMillis: Date.now() + 900000,
+        }
+      : url.pathname.endsWith("/accounts")
+        ? accountResponse("2026-10-31")
+        : url.pathname.endsWith("/dashboard")
+          ? dashboard
+          : (() => {
+              activityRequests.push(url);
+              return {
+                items: [],
+                nextCursor: null,
+                dataset: dashboard.dataset,
+              };
+            })();
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  vi.stubGlobal("fetch", fetch);
+  const wrapper = mount(App, {
+    global: {
+      plugins: [
+        [
+          VueQueryPlugin,
+          {
+            queryClient: new QueryClient({
+              defaultOptions: { queries: { retry: false } },
+            }),
+          },
+        ],
+      ],
+    },
+  });
+  try {
+    await flushPromises();
+    await flushPromises();
+    const groceries = 'button[aria-label="Filter transactions by Groceries"]';
+    await wrapper.get(groceries).trigger("click");
+    await flushPromises();
+    expect(
+      (
+        wrapper.get("label:has(select):last-of-type select")
+          .element as HTMLSelectElement
+      ).value,
+    ).toBe("GROCERIES");
+    expect(activityRequests.at(-1)?.searchParams.get("category")).toBe(
+      "GROCERIES",
+    );
+    await wrapper.get(".transaction-filter-menu summary").trigger("click");
+    await wrapper.get(".transaction-filter-popover button").trigger("click");
+    await flushPromises();
+    expect(
+      (
+        wrapper.get("label:has(select):last-of-type select")
+          .element as HTMLSelectElement
+      ).value,
+    ).toBe("");
+    await wrapper.get(".sidebar-nav button:first-child").trigger("click");
+    await wrapper.get(groceries).trigger("click");
+    await flushPromises();
+    expect(
+      (
+        wrapper.get("label:has(select):last-of-type select")
+          .element as HTMLSelectElement
+      ).value,
+    ).toBe("GROCERIES");
+    expect(activityRequests.at(-1)?.searchParams.get("category")).toBe(
+      "GROCERIES",
+    );
+    expect(activityRequests.at(-1)?.searchParams.has("cursor")).toBe(false);
+    await wrapper.get(".sidebar-nav button:first-child").trigger("click");
+    expect(wrapper.get(".summary-card.primary .metric-value").text()).toBe(
+      "+R850.00",
+    );
+    await wrapper
+      .get('button[aria-label="Filter transactions by Health"]')
+      .trigger("click");
+    await flushPromises();
+    expect(activityRequests.at(-1)?.searchParams.get("category")).toBe(
+      "HEALTH",
+    );
+    expect(wrapper.get(".account-button").text()).toContain("Everyday");
+    expect(wrapper.get(".period-control").text()).toContain("Oct 2026");
+  } finally {
+    wrapper.unmount();
+    vi.unstubAllGlobals();
+    location.hash = "";
+  }
 });
 
 it("keeps cached spending concealed after failed logout until a server session check succeeds", async () => {
@@ -288,7 +423,7 @@ it("rejects a late previous-customer dashboard after logout and new login", asyn
     await flushPromises();
     expect(
       fetch.mock.calls.some(([request]) =>
-        (request as Request).url.endsWith("/dashboard"),
+        new URL((request as Request).url).pathname.endsWith("/dashboard"),
       ),
     ).toBe(true);
     await wrapper.get(".profile-popover button").trigger("click");

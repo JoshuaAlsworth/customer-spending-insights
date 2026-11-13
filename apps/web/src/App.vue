@@ -30,6 +30,10 @@ const view = ref<"overview" | "transactions">(
   location.hash.startsWith("#transactions") ? "transactions" : "overview",
 );
 const selectedAccount = ref("");
+const accountSelectionInitialized = ref(false);
+const transactionExplorer = ref<InstanceType<
+  typeof TransactionExplorer
+> | null>(null);
 const detailId = ref<string | null>(parseDetail());
 function parseDetail() {
   const match = location.hash.match(/^#transactions\/(au|pe)_[A-Za-z0-9_-]+$/);
@@ -56,6 +60,7 @@ function clearSensitiveState() {
   generation.value++;
   session.value = null;
   selectedAccount.value = "";
+  accountSelectionInitialized.value = false;
   detailId.value = null;
   from.value = "";
   to.value = "";
@@ -122,6 +127,11 @@ const snapshotMismatch = computed(() => {
 watch(
   () => accounts.data.value?.accounts,
   (owned) => {
+    if (owned && !accountSelectionInitialized.value) {
+      selectedAccount.value = owned[0]?.id ?? "";
+      accountSelectionInitialized.value = true;
+      return;
+    }
     if (
       owned &&
       selectedAccount.value &&
@@ -129,6 +139,7 @@ watch(
     )
       selectedAccount.value = "";
   },
+  { flush: "sync" },
 );
 watch(
   [
@@ -165,12 +176,6 @@ watch(
       clearSensitiveState();
       status.value = "Your session ended. Sign in again to view your spending.";
     }
-  },
-);
-watch(
-  () => session.value?.customerId,
-  () => {
-    selectedAccount.value = "";
   },
 );
 watch(
@@ -315,6 +320,10 @@ function setView(next: "overview" | "transactions") {
   detailId.value = null;
   location.hash = next;
 }
+function openCategory(code: string) {
+  transactionExplorer.value?.applyCategory(code);
+  setView("transactions");
+}
 function onHashChange() {
   view.value = location.hash.startsWith("#transactions")
     ? "transactions"
@@ -368,7 +377,7 @@ onUnmounted(() => {
     <p role="status">Checking your session…</p>
   </main>
   <SignIn v-else-if="!session" :status="status" @signed-in="signedIn" />
-  <main v-else class="shell">
+  <main v-else id="dashboard" class="shell">
     <p v-if="status" class="state-panel error" role="alert">
       {{ status }}
     </p>
@@ -380,160 +389,147 @@ onUnmounted(() => {
     >
       Check session
     </button>
-    <div class="page-heading">
-      <h1 tabindex="-1">
-        {{ view === "overview" ? "Your spending" : "Transactions" }}
-      </h1>
-      <span
-        v-if="
-          !sessionLocked &&
-          !snapshotMismatch &&
-          dashboard.data.value?.dataset.referenceDate
-        "
-        class="data-through"
-        >Data through {{ dashboard.data.value.dataset.referenceDate }}</span
-      >
-    </div>
-    <p v-if="sessionLocked" class="state-panel" role="status">
-      Spending is locked until your session is checked.
-    </p>
-    <p v-else-if="accounts.isPending.value" class="state-panel" role="status">
-      Loading your accounts…
-    </p>
-    <div
-      v-else-if="accounts.isError.value"
-      class="state-panel error"
-      role="alert"
-    >
-      Accounts could not be loaded.
-      <button type="button" @click="accounts.refetch()">Retry</button>
-    </div>
-    <template v-else-if="accounts.data.value">
-      <p v-if="snapshotMismatch" class="state-panel" role="status">
-        Account balances and spending are updating. Refresh if this continues.
+    <div class="page-top">
+      <div class="page-heading">
+        <h1 tabindex="-1">
+          {{ view === "overview" ? "Your spending" : "Transactions" }}
+        </h1>
+        <span
+          v-if="
+            !sessionLocked &&
+            !snapshotMismatch &&
+            dashboard.data.value?.dataset.referenceDate
+          "
+          class="data-through"
+          >Data through {{ dashboard.data.value.dataset.referenceDate }}</span
+        >
+      </div>
+      <p v-if="sessionLocked" class="state-panel" role="status">
+        Spending is locked until your session is checked.
       </p>
-      <AccountBalances
-        v-else
-        v-model:account-id="selectedAccount"
-        :response="accounts.data.value"
-        :hidden="hidden"
-        :compact="view === 'transactions'"
-      />
-      <ScopeControls
-        v-if="
-          accounts.data.value.accounts.length &&
-          dashboard.data.value &&
-          !snapshotMismatch
-        "
-        :from="from"
-        :to="to"
-        :reference-date="dashboard.data.value.dataset.referenceDate"
-        @apply-period="setPeriod"
-      />
-    </template>
-    <template
-      v-if="
-        !sessionLocked &&
-        accounts.isSuccess.value &&
-        accounts.data.value?.accounts.length &&
-        view === 'overview' &&
-        !snapshotMismatch
-      "
-    >
-      <p v-if="refreshing" class="state-panel" role="status">
-        Refreshing your spending…
-      </p>
-      <p v-if="dashboard.isPending.value" class="state-panel" role="status">
-        Loading your spending…
+      <p v-else-if="accounts.isPending.value" class="state-panel" role="status">
+        Loading your accounts…
       </p>
       <div
-        v-else-if="dashboard.isError.value"
+        v-else-if="accounts.isError.value"
         class="state-panel error"
         role="alert"
       >
-        Spending data could not be loaded.
+        Accounts could not be loaded.
+        <button type="button" @click="accounts.refetch()">Retry</button>
+      </div>
+      <template v-else-if="accounts.data.value">
+        <div class="global-filters">
+          <p v-if="snapshotMismatch" class="state-panel" role="status">
+            Account balances and spending are updating. Refresh if this
+            continues.
+          </p>
+          <AccountBalances
+            v-else
+            v-model:account-id="selectedAccount"
+            :response="accounts.data.value"
+            :hidden="hidden"
+            :compact="view === 'transactions'"
+          />
+          <ScopeControls
+            v-if="accounts.data.value.accounts.length && !snapshotMismatch"
+            :from="from"
+            :to="to"
+            :reference-date="accounts.data.value.dataset.referenceDate"
+            @apply-period="setPeriod"
+          />
+        </div>
+      </template>
+    </div>
+    <div class="content-stack">
+      <template
+        v-if="
+          !sessionLocked &&
+          accounts.isSuccess.value &&
+          accounts.data.value?.accounts.length &&
+          view === 'overview' &&
+          !snapshotMismatch
+        "
+      >
+        <p v-if="refreshing" class="state-panel" role="status">
+          Refreshing your spending…
+        </p>
+        <p v-if="dashboard.isPending.value" class="state-panel" role="status">
+          Loading your spending…
+        </p>
+        <div
+          v-else-if="dashboard.isError.value"
+          class="state-panel error"
+          role="alert"
+        >
+          Spending data could not be loaded.
+          <button type="button" @click="dashboard.refetch()">Retry</button>
+        </div>
+        <OverviewView
+          v-else-if="dashboard.data.value"
+          :dashboard="dashboard.data.value"
+          :hidden="hidden"
+          :customer-id="session.customerId"
+          :account-ids="accountIds"
+          :generation="generation"
+          :reconciling="reconciling"
+          @revision-aligned="activityAligned"
+          @revision-mismatch="reconcileActivity"
+          @unauthorized="clearSensitiveState"
+          @transactions="setView('transactions')"
+          @open="openDetail"
+          @category="openCategory"
+        />
+      </template>
+      <p
+        v-if="
+          view === 'transactions' && dashboard.isPending.value && !sessionLocked
+        "
+        class="state-panel"
+        role="status"
+      >
+        Loading your spending scope…
+      </p>
+      <div
+        v-if="
+          view === 'transactions' && dashboard.isError.value && !sessionLocked
+        "
+        class="state-panel error"
+        role="alert"
+      >
+        Spending scope could not be loaded.
         <button type="button" @click="dashboard.refetch()">Retry</button>
       </div>
-      <OverviewView
-        v-else-if="dashboard.data.value"
-        :dashboard="dashboard.data.value"
-        :hidden="hidden"
+      <TransactionExplorer
+        v-if="
+          dashboard.data.value &&
+          !snapshotMismatch &&
+          accounts.isSuccess.value &&
+          !dashboard.isError.value &&
+          !sessionLocked &&
+          accounts.data.value?.accounts.length
+        "
+        v-show="view === 'transactions'"
+        ref="transactionExplorer"
         :customer-id="session.customerId"
         :account-ids="accountIds"
+        :from="from"
+        :to="to"
+        :hidden="hidden"
+        :active="view === 'transactions' && !sessionLocked"
         :generation="generation"
+        :dataset-epoch="dashboard.data.value.dataset.instanceEpoch"
+        :dashboard-revision="dashboard.data.value.dataset.customerRevision"
         :reconciling="reconciling"
-        @revision-aligned="activityAligned"
-        @revision-mismatch="reconcileActivity"
+        :reference-date="dashboard.data.value.dataset.referenceDate"
+        :detail-id="detailId"
+        :accounts="accounts.data.value?.accounts"
+        @open="openDetail"
+        @close="closeDetail"
         @unauthorized="clearSensitiveState"
-        @transactions="setView('transactions')"
+        @revision-mismatch="reconcileActivity"
+        @revision-aligned="activityAligned"
       />
-    </template>
-    <p
-      v-if="
-        view === 'transactions' && dashboard.isPending.value && !sessionLocked
-      "
-      class="state-panel"
-      role="status"
-    >
-      Loading your spending scope…
-    </p>
-    <div
-      v-if="
-        view === 'transactions' && dashboard.isError.value && !sessionLocked
-      "
-      class="state-panel error"
-      role="alert"
-    >
-      Spending scope could not be loaded.
-      <button type="button" @click="dashboard.refetch()">Retry</button>
     </div>
-    <TransactionExplorer
-      v-if="
-        dashboard.data.value &&
-        !snapshotMismatch &&
-        accounts.isSuccess.value &&
-        !dashboard.isError.value &&
-        !sessionLocked &&
-        accounts.data.value?.accounts.length
-      "
-      v-show="view === 'transactions'"
-      :customer-id="session.customerId"
-      :account-ids="accountIds"
-      :from="from"
-      :to="to"
-      :hidden="hidden"
-      :active="view === 'transactions' && !sessionLocked"
-      :generation="generation"
-      :dataset-epoch="dashboard.data.value.dataset.instanceEpoch"
-      :dashboard-revision="dashboard.data.value.dataset.customerRevision"
-      :reconciling="reconciling"
-      :reference-date="dashboard.data.value.dataset.referenceDate"
-      :detail-id="detailId"
-      @open="openDetail"
-      @close="closeDetail"
-      @unauthorized="clearSensitiveState"
-      @revision-mismatch="reconcileActivity"
-      @revision-aligned="activityAligned"
-    />
   </main>
-  <nav
-    v-if="session && !sessionLocked"
-    class="bottom-nav"
-    aria-label="Mobile navigation"
-  >
-    <button
-      type="button"
-      :aria-current="view === 'overview' ? 'page' : undefined"
-      @click="setView('overview')"
-    >
-      Overview
-    </button>
-    <button
-      type="button"
-      :aria-current="view === 'transactions' ? 'page' : undefined"
-      @click="setView('transactions')"
-    >
-      Transactions
-    </button>
-  </nav>
 </template>
