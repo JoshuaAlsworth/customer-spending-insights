@@ -163,9 +163,16 @@ export interface components {
             maskedSuffix: string;
             /** @enum {string} */
             accountKind: "EVERYDAY" | "SAVINGS" | "SECONDARY_TRANSACTIONAL";
+            postedBalanceMinor: components["schemas"]["MoneyMinor"];
         };
         AccountsResponse: {
             accounts: components["schemas"]["Account"][];
+            combinedPostedBalanceMinor: components["schemas"]["MoneyMinor"] | null;
+            /** Format: date */
+            balanceAsOfDate: string;
+            /** @enum {string} */
+            currency: "ZAR";
+            dataset: components["schemas"]["Dataset"];
         };
         Scope: {
             /** Format: date */

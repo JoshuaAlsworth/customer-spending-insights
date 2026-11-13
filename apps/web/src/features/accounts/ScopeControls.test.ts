@@ -5,8 +5,6 @@ import ScopeControls from "./ScopeControls.vue";
 it("rejects a period after the dataset reference date and accepts its last day", async () => {
   const wrapper = mount(ScopeControls, {
     props: {
-      accounts: [],
-      accountId: "",
       from: "2026-10-01",
       to: "2026-10-31",
       referenceDate: "2026-10-31",

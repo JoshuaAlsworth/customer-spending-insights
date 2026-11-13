@@ -22,7 +22,7 @@ CREATE TEMP TABLE categories_stage (LIKE categories INCLUDING DEFAULTS);
 CREATE TEMP TABLE authorizations_stage (LIKE authorizations INCLUDING DEFAULTS);
 CREATE TEMP TABLE posted_stage (LIKE posted_entries INCLUDING DEFAULTS);
 COPY customers_stage(id,display_name,login_id,status,primary_persona,modifiers,customer_revision) FROM STDIN WITH (FORMAT csv, HEADER true, NULL '\N');
-COPY accounts_stage(id,customer_id,account_kind,alias,masked_suffix,currency,opened_on,status) FROM STDIN WITH (FORMAT csv, HEADER true, NULL '\N');
+COPY accounts_stage(id,customer_id,account_kind,alias,masked_suffix,currency,opened_on,status,balance_anchor_at,opening_balance_minor) FROM STDIN WITH (FORMAT csv, HEADER true, NULL '\N');
 COPY credentials_stage(customer_id,password_hash) FROM STDIN WITH (FORMAT csv, HEADER true);
 COPY merchants_stage(id,display_name,mcc,default_category_code,descriptor_variant) FROM STDIN WITH (FORMAT csv, HEADER true, NULL '\N');
 COPY categories_stage(code,display_name,display_order,policy_version) FROM STDIN WITH (FORMAT csv, HEADER true, NULL '\N');
@@ -30,6 +30,7 @@ COPY authorizations_stage(id,account_id,authorized_amount_minor,occurred_at,life
 COPY posted_stage(id,account_id,source_event_id,amount_minor,currency,transaction_type,effect_group,posted_at,occurred_at,raw_description,merchant_id,category_code,classification_provenance,original_entry_id,authorization_id,transfer_group_id) FROM STDIN WITH (FORMAT csv, HEADER true, NULL '\N');
 CREATE INDEX accounts_stage_id ON accounts_stage(id);
 CREATE INDEX posted_stage_account ON posted_stage(account_id);
+CREATE INDEX posted_stage_id ON posted_stage(id);
 CREATE INDEX posted_stage_authorization ON posted_stage(authorization_id);
 ANALYZE accounts_stage;
 ANALYZE posted_stage;
@@ -72,6 +73,14 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM posted_stage p JOIN accounts_stage a ON a.id=p.account_id WHERE (p.posted_at AT TIME ZONE 'Africa/Johannesburg')::date < a.opened_on) THEN
     RAISE EXCEPTION 'Posting predates opening';
   END IF;
+  IF EXISTS (SELECT 1 FROM accounts_stage a WHERE a.balance_anchor_at IS NULL OR a.opening_balance_minor IS NULL
+    OR (a.balance_anchor_at AT TIME ZONE 'Africa/Johannesburg')::time <> time '00:00:00'
+    OR (a.balance_anchor_at AT TIME ZONE 'Africa/Johannesburg')::date < a.opened_on
+    OR (a.balance_anchor_at AT TIME ZONE 'Africa/Johannesburg')::date > date '2026-10-31')
+    OR EXISTS (SELECT 1 FROM posted_stage p JOIN accounts_stage a ON a.id=p.account_id
+      WHERE p.posted_at<a.balance_anchor_at OR p.posted_at>=timestamptz '2026-11-01 00:00+02') THEN
+    RAISE EXCEPTION 'Invalid opening anchors or pre-anchor postings';
+  END IF;
   IF EXISTS (SELECT 1 FROM authorizations_stage a LEFT JOIN posted_stage p ON p.authorization_id=a.id
     GROUP BY a.id,a.lifecycle_status HAVING count(p.id) <> CASE WHEN a.lifecycle_status='POSTED' THEN 1 ELSE 0 END) THEN
     RAISE EXCEPTION 'Invalid authorization lifecycle';
@@ -80,8 +89,8 @@ END $$;
 INSERT INTO customers(id,display_name,login_id,status,primary_persona,modifiers,customer_revision)
   SELECT id,display_name,login_id,status,primary_persona,modifiers,customer_revision FROM customers_stage ORDER BY id;
 INSERT INTO credentials(customer_id,password_hash) SELECT customer_id,password_hash FROM credentials_stage ORDER BY customer_id;
-INSERT INTO accounts(id,customer_id,account_kind,alias,masked_suffix,currency,opened_on,status)
-  SELECT id,customer_id,account_kind,alias,masked_suffix,currency,opened_on,status FROM accounts_stage ORDER BY id;
+INSERT INTO accounts(id,customer_id,account_kind,alias,masked_suffix,currency,opened_on,status,balance_anchor_at,opening_balance_minor)
+  SELECT id,customer_id,account_kind,alias,masked_suffix,currency,opened_on,status,balance_anchor_at,opening_balance_minor FROM accounts_stage ORDER BY id;
 INSERT INTO merchants(id,display_name,mcc,default_category_code,descriptor_variant)
   SELECT id,display_name,mcc,default_category_code,descriptor_variant FROM merchants_stage ORDER BY id;
 INSERT INTO authorizations(id,account_id,authorized_amount_minor,occurred_at,lifecycle_status,merchant_id,raw_description,source_event_id)

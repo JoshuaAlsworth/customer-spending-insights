@@ -11,5 +11,10 @@
   "F-09":{"incomeMinor":"1875000","grossSpendingMinor":"1260050","spendingCreditsMinor":"12000","netSpendingMinor":"1248050","ownAccountFlowMinor":"0","netMovementMinor":"626950","categories":{"HOUSING_UTILITIES":"420000","GROCERIES":"325000","TRANSPORT_FUEL":"190000","MONEY_SENT":"157550","CASH_WITHDRAWALS":"100000","UNCATEGORIZED":"60000","BANK_FEES":"7500","HEALTH":"-12000"},"weeklyBuckets":["0","67500","257550","305000","618000"]},
   "F-10":{"kind":"VALIDATION_AND_BOUNDARIES"},
   "F-11":{"kind":"CONCURRENT_STATE"},
-  "F-12":{"kind":"REVISION_EPOCH_IDENTITY"}
+  "F-12":{"kind":"REVISION_EPOCH_IDENTITY"},
+  "F-13":{"everydayPostedBalanceMinor":"2215000","savingsPostedBalanceMinor":"350000","combinedPostedBalanceMinor":"2565000"},
+  "F-14":{"postedBalanceMinor":"1000000","septemberMovementMinor":"700000","octoberMovementMinor":"-200000"},
+  "F-15":{"openingPostedBalanceMinor":"100000","pendingPostedBalanceMinor":"100000","postedBalanceMinor":"76000","cancelledPostedBalanceMinor":"76000","replayedPostedBalanceMinor":"76000"},
+  "F-16":{"septemberCombinedPostedBalanceMinor":"380000","octoberCombinedPostedBalanceMinor":"460000"},
+  "F-17":{"negativePostedBalanceMinor":"-5000","zeroPostedBalanceMinor":"0","noAccountsCombinedPostedBalanceMinor":null}
 }

@@ -3,6 +3,7 @@ import type { components, paths } from "./generated/schema";
 
 export type Session = components["schemas"]["Session"];
 export type Account = components["schemas"]["Account"];
+export type AccountsResponse = components["schemas"]["AccountsResponse"];
 export type Dashboard = components["schemas"]["Dashboard"];
 
 export class ApiError extends Error {
@@ -54,7 +55,25 @@ export async function logout() {
 export async function getAccounts(signal?: AbortSignal) {
   const result = await api.GET("/api/v1/accounts", { signal });
   if (!result.data) throw new ApiError(result.response.status);
-  return result.data;
+  const data = result.data;
+  const amount = (value: unknown) =>
+    typeof value === "string" && /^(0|-?[1-9]\d*)$/.test(value);
+  if (
+    !Array.isArray(data.accounts) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(data.balanceAsOfDate) ||
+    data.currency !== "ZAR" ||
+    !data.dataset ||
+    typeof data.dataset.datasetId !== "string" ||
+    typeof data.dataset.instanceEpoch !== "string" ||
+    !Number.isSafeInteger(data.dataset.customerRevision) ||
+    data.dataset.referenceDate !== data.balanceAsOfDate ||
+    (data.accounts.length === 0
+      ? data.combinedPostedBalanceMinor !== null
+      : !amount(data.combinedPostedBalanceMinor)) ||
+    data.accounts.some((account) => !amount(account.postedBalanceMinor))
+  )
+    throw new ApiError(502);
+  return data;
 }
 
 export async function getDashboard(

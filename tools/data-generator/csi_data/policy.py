@@ -31,6 +31,8 @@ FILES = {
         "currency",
         "opened_on",
         "status",
+        "balance_anchor_at",
+        "opening_balance_minor",
     ),
     "merchants.csv": (
         "merchant_id",
@@ -94,7 +96,12 @@ PURCHASE_AMOUNTS = {
     "HEALTH": (10.2, 0.8, 1000, 300000),
 }
 UTC2 = timezone(timedelta(hours=2))
-VERSION = "1.0.0"
+VERSION = "1.1.0"
+OPENING_BALANCE_BANDS = {
+    "EVERYDAY": (0, 3_000_000),
+    "SAVINGS": (0, 10_000_000),
+    "SECONDARY_TRANSACTIONAL": (0, 2_000_000),
+}
 PROFILES = {
     "demo": {
         "seed": 20261031,

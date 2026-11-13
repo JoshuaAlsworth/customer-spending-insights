@@ -31,6 +31,50 @@ public class ReportingScope {
 
     public Resolved resolve(
             String owner, String accountIds, String from, String to, boolean activity) {
+        FinancialController.Dataset dataset = dataset(owner);
+        LocalDate end = date(to, dataset.referenceDate(), activity);
+        LocalDate start = date(from, end.withDayOfMonth(1), activity);
+        if (start.isAfter(end)
+                || end.isAfter(dataset.referenceDate())
+                || start.isBefore(end.minusMonths(36).plusDays(1))
+                || ChronoUnit.DAYS.between(start, end) > 1100) {
+            invalid(activity, "Invalid reporting period");
+        }
+        List<String> selected;
+        if (accountIds == null) {
+            selected =
+                    jdbc.query(
+                            "SELECT id FROM accounts WHERE customer_id=? AND status='OPEN' AND opened_on<=? ORDER BY id",
+                            (rs, n) -> rs.getString(1),
+                            owner,
+                            dataset.referenceDate());
+        } else {
+            selected = List.of(accountIds.split(",", -1));
+            if (selected.size() > 4
+                    || selected.stream().anyMatch(id -> !id.matches("[A-Za-z0-9_-]{1,64}"))
+                    || selected.stream().distinct().count() != selected.size()) {
+                invalid(activity, "Invalid account selection");
+            }
+            String placeholders = String.join(",", Collections.nCopies(selected.size(), "?"));
+            List<Object> args = new ArrayList<>();
+            args.add(owner);
+            args.add(dataset.referenceDate());
+            args.addAll(selected);
+            Integer count =
+                    jdbc.queryForObject(
+                            "SELECT count(*) FROM accounts WHERE customer_id=? AND status='OPEN' AND opened_on<=? AND id IN ("
+                                    + placeholders
+                                    + ")",
+                            Integer.class,
+                            args.toArray());
+            if (count == null || count != selected.size()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Scope unavailable");
+            }
+        }
+        return new Resolved(owner, List.copyOf(selected), start, end, dataset);
+    }
+
+    public FinancialController.Dataset dataset(String owner) {
         FinancialController.Dataset dataset =
                 jdbc.query(
                         "SELECT d.dataset_id,d.instance_epoch,c.customer_revision,d.reference_date FROM dataset_instance d CROSS JOIN customers c WHERE d.singleton=true AND c.id=?",
@@ -47,44 +91,7 @@ public class ReportingScope {
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE, "Dataset unavailable");
         }
-        LocalDate end = date(to, dataset.referenceDate(), activity);
-        LocalDate start = date(from, end.withDayOfMonth(1), activity);
-        if (start.isAfter(end)
-                || end.isAfter(dataset.referenceDate())
-                || start.isBefore(end.minusMonths(36).plusDays(1))
-                || ChronoUnit.DAYS.between(start, end) > 1100) {
-            invalid(activity, "Invalid reporting period");
-        }
-        List<String> selected;
-        if (accountIds == null) {
-            selected =
-                    jdbc.query(
-                            "SELECT id FROM accounts WHERE customer_id=? ORDER BY id",
-                            (rs, n) -> rs.getString(1),
-                            owner);
-        } else {
-            selected = List.of(accountIds.split(",", -1));
-            if (selected.size() > 4
-                    || selected.stream().anyMatch(id -> !id.matches("[A-Za-z0-9_-]{1,64}"))
-                    || selected.stream().distinct().count() != selected.size()) {
-                invalid(activity, "Invalid account selection");
-            }
-            String placeholders = String.join(",", Collections.nCopies(selected.size(), "?"));
-            List<Object> args = new ArrayList<>();
-            args.add(owner);
-            args.addAll(selected);
-            Integer count =
-                    jdbc.queryForObject(
-                            "SELECT count(*) FROM accounts WHERE customer_id=? AND id IN ("
-                                    + placeholders
-                                    + ")",
-                            Integer.class,
-                            args.toArray());
-            if (count == null || count != selected.size()) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Scope unavailable");
-            }
-        }
-        return new Resolved(owner, List.copyOf(selected), start, end, dataset);
+        return dataset;
     }
 
     private static LocalDate date(String value, LocalDate fallback, boolean activity) {

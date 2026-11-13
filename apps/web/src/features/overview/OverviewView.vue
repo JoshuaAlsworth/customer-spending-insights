@@ -123,13 +123,12 @@ const trendHeight = (value: string) => {
   <div class="overview-view">
     <section class="summary" aria-label="Financial overview">
       <article class="summary-card primary">
-        <p class="metric-name">Net spending</p>
+        <p class="metric-name">Money out</p>
         <div class="metric-value">
           {{ shown(dashboard.summary.netSpendingMinor) }}
         </div>
         <p class="metric-note">
-          Posted outgoings less spending credits. Own-account transfers
-          excluded.
+          Posted outgoings net of refunds. Own-account transfers excluded.
         </p>
         <p
           v-if="!hidden && BigInt(dashboard.summary.netSpendingMinor) < 0n"
@@ -139,7 +138,7 @@ const trendHeight = (value: string) => {
         </p>
       </article>
       <article class="summary-card">
-        <p class="metric-name">Net incoming funds</p>
+        <p class="metric-name">Money in</p>
         <div class="metric-value">
           {{ shown(dashboard.summary.incomeMinor) }}
         </div>
@@ -151,16 +150,15 @@ const trendHeight = (value: string) => {
         </p>
       </article>
       <article class="summary-card">
-        <p class="metric-name">Net movement</p>
+        <p class="metric-name">Change this period</p>
         <div class="metric-value">
           {{ shown(dashboard.summary.netMovementMinor, true) }}
         </div>
         <details v-if="!hidden" class="net-help">
           <summary>How calculated</summary>
           <p>
-            Net incoming funds {{ money(dashboard.summary.incomeMinor) }} − net
-            spending {{ money(dashboard.summary.netSpendingMinor) }} +
-            own-account flow
+            Money in {{ money(dashboard.summary.incomeMinor) }} − money out
+            {{ money(dashboard.summary.netSpendingMinor) }} + own-account flow
             {{ money(dashboard.summary.ownAccountFlowMinor, true) }} =
             {{ money(dashboard.summary.netMovementMinor, true) }}.
           </p>

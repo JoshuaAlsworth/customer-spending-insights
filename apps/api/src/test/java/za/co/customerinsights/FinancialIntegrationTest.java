@@ -338,6 +338,127 @@ class FinancialIntegrationTest {
     }
 
     @Test
+    void exactPostedBalancesUseAnchorsAndFixedReferenceDate() throws Exception {
+        String f13 =
+                mvc.perform(get("/api/v1/accounts").cookie(login("fixture-f01")))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        assertThat(JsonPath.<String>read(f13, "$.accounts[0].postedBalanceMinor"))
+                .isEqualTo("2215000");
+        assertThat(JsonPath.<String>read(f13, "$.accounts[1].postedBalanceMinor"))
+                .isEqualTo("350000");
+        assertThat(JsonPath.<String>read(f13, "$.combinedPostedBalanceMinor")).isEqualTo("2565000");
+        assertThat(JsonPath.<String>read(f13, "$.balanceAsOfDate")).isEqualTo("2026-10-31");
+        assertThat(JsonPath.<String>read(f13, "$.currency")).isEqualTo("ZAR");
+        assertThat(JsonPath.<String>read(f13, "$.dataset.datasetId"))
+                .isEqualTo("spending-overview-isolated-fixture-v2");
+
+        Cookie f14Session = login("fixture-f14");
+        String f14 =
+                mvc.perform(get("/api/v1/accounts").cookie(f14Session))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        assertThat(JsonPath.<String>read(f14, "$.combinedPostedBalanceMinor")).isEqualTo("1000000");
+        String september =
+                mvc.perform(
+                                get("/api/v1/dashboard?from=2026-09-01&to=2026-09-30")
+                                        .cookie(f14Session))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        String october =
+                mvc.perform(
+                                get("/api/v1/dashboard?from=2026-10-01&to=2026-10-31")
+                                        .cookie(f14Session))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        assertThat(JsonPath.<String>read(september, "$.summary.netMovementMinor"))
+                .isEqualTo("700000");
+        assertThat(JsonPath.<String>read(october, "$.summary.netMovementMinor"))
+                .isEqualTo("-200000");
+        assertThat(
+                        mvc.perform(get("/api/v1/accounts").cookie(f14Session))
+                                .andReturn()
+                                .getResponse()
+                                .getContentAsString())
+                .isEqualTo(f14);
+
+        String f16 =
+                mvc.perform(get("/api/v1/accounts").cookie(login("fixture-f16")))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        assertThat(JsonPath.<String>read(f16, "$.combinedPostedBalanceMinor")).isEqualTo("460000");
+        try (var admin =
+                        DriverManager.getConnection(
+                                db.getJdbcUrl(), db.getUsername(), db.getPassword());
+                var sql = admin.createStatement();
+                var septemberBalance =
+                        sql.executeQuery(
+                                "SELECT sum(a.opening_balance_minor::numeric + COALESCE((SELECT sum(p.amount_minor::numeric) FROM posted_entries p WHERE p.account_id=a.id AND p.posted_at>=a.balance_anchor_at AND p.posted_at<'2026-10-01 00:00+02'),0)) FROM accounts a WHERE a.customer_id='fixture-f16'")) {
+            assertThat(septemberBalance.next()).isTrue();
+            assertThat(septemberBalance.getBigDecimal(1).toBigIntegerExact())
+                    .isEqualTo(new BigInteger("380000"));
+        }
+        String f17 =
+                mvc.perform(get("/api/v1/accounts").cookie(login("fixture-f17")))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        assertThat(JsonPath.<String>read(f17, "$.accounts[0].postedBalanceMinor"))
+                .isEqualTo("-5000");
+        assertThat(JsonPath.<String>read(f17, "$.accounts[1].postedBalanceMinor")).isEqualTo("0");
+        String closed =
+                mvc.perform(get("/api/v1/accounts").cookie(login("fixture-closed")))
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString();
+        assertThat(JsonPath.<List<?>>read(closed, "$.accounts")).isEmpty();
+        assertThat(closed).contains("\"combinedPostedBalanceMinor\":null");
+        assertThat(
+                        mvc.perform(
+                                        get("/api/v1/dashboard?accountIds=closed-only")
+                                                .cookie(login("fixture-closed")))
+                                .andReturn()
+                                .getResponse()
+                                .getStatus())
+                .isEqualTo(404);
+    }
+
+    @Test
+    void legacyAccountWithoutAnchorIsUnavailableRatherThanZero() throws Exception {
+        try (var admin =
+                        DriverManager.getConnection(
+                                db.getJdbcUrl(), db.getUsername(), db.getPassword());
+                var sql = admin.createStatement()) {
+            sql.executeUpdate(
+                    "INSERT INTO customers(id,display_name,login_id,status,primary_persona) VALUES('legacy-anchor-customer','Legacy','legacy-anchor-customer','ACTIVE','SALARIED')");
+            sql.executeUpdate(
+                    "INSERT INTO credentials(customer_id,password_hash) SELECT 'legacy-anchor-customer',password_hash FROM credentials WHERE customer_id='fixture-f09'");
+            sql.executeUpdate(
+                    "INSERT INTO accounts(id,customer_id,account_kind,alias,masked_suffix,opened_on,status) VALUES('legacy-anchor-account','legacy-anchor-customer','EVERYDAY','Everyday','1234','2026-01-01','OPEN')");
+            try {
+                var response =
+                        mvc.perform(get("/api/v1/accounts").cookie(login("legacy-anchor-customer")))
+                                .andReturn()
+                                .getResponse();
+                assertThat(response.getStatus()).isEqualTo(503);
+                assertThat(response.getContentAsString())
+                        .doesNotContain("postedBalanceMinor")
+                        .doesNotContain("1234");
+            } finally {
+                sql.executeUpdate("DELETE FROM accounts WHERE id='legacy-anchor-account'");
+                sql.executeUpdate(
+                        "DELETE FROM credentials WHERE customer_id='legacy-anchor-customer'");
+                sql.executeUpdate("DELETE FROM customers WHERE id='legacy-anchor-customer'");
+            }
+        }
+    }
+
+    @Test
     void activityListAndDetailsAreOwnedFilteredAndCursorBound() throws Exception {
         Cookie session = login("fixture-f09");
         var page =
