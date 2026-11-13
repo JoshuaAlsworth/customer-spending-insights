@@ -46,6 +46,7 @@ with sync_playwright() as playwright:
             )
         page.keyboard.press("Escape")
         expect(dialog).to_be_hidden()
+        expect(opener).to_have_attribute("aria-expanded", "false")
         expect(opener).to_be_focused()
         page.keyboard.press("Tab")
         expect(page.locator(".account-button")).to_be_focused()
