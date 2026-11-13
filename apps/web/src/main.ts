@@ -2,6 +2,7 @@ import { createApp } from "vue";
 import { VueQueryPlugin } from "@tanstack/vue-query";
 import App from "./App.vue";
 import "./styles/base.css";
+import "./styles/dashboard.css";
 
 createApp(App)
   .use(VueQueryPlugin, {

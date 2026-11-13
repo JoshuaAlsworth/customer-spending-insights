@@ -18,8 +18,19 @@ def sign_in(browser, fixture):
     page.get_by_label("Login ID").fill(fixture)
     page.get_by_label("Password").fill("fixture-only-password")
     page.get_by_role("button", name="Sign in").click()
-    expect(page.get_by_role("heading", name="Your accounts")).to_be_visible()
+    expect(page.locator(".account-control")).to_be_visible()
     return page, errors
+
+
+def navigate(page, target):
+    width = page.viewport_size["width"]
+    if width >= 1100:
+        page.locator(".sidebar-nav").get_by_role("button", name=target).click()
+    elif width >= 768:
+        page.locator(".main-nav").get_by_role("button", name=target).click()
+    else:
+        page.get_by_role("button", name="Open navigation").click()
+        page.locator(".mobile-menu").get_by_role("button", name=target).click()
 
 
 def check_text_resize(page):
@@ -59,23 +70,25 @@ with sync_playwright() as playwright:
     expect(options.nth(2)).to_contain_text("R3,500.00")
     expect(page.locator(".accounts-overview")).to_contain_text("31 Oct 2026")
     assert page.locator(".accounts-overview select").count() == 0
+    page.locator(".account-button").click()
     page.get_by_role("radio", name="Everyday").check()
-    expect(page.locator(".summary-card.primary .metric-value")).to_have_text("R850.00")
-    assert page.get_by_role("radio", name="Everyday").is_checked()
-    page.locator(".main-nav").get_by_role("button", name="Transactions").click()
+    expect(page.locator(".summary-card.primary .metric-value")).to_have_text("+R850.00")
+    assert page.locator('input[value="f01-everyday"]').is_checked()
+    navigate(page, "Transactions")
     expect(page.locator(".selected-balance")).to_contain_text("R22,150.00")
     expect(page.locator(".selected-balance")).to_contain_text("31 Oct 2026")
-    expect(page.get_by_role("combobox", name="Account", exact=True)).to_have_value("f01-everyday")
-    page.get_by_role("combobox", name="Account", exact=True).select_option("")
+    expect(page.locator(".account-button")).to_contain_text("Everyday")
+    page.locator(".account-button").click()
+    page.get_by_role("radio", name="All accounts").check()
     expect(page.locator(".selected-balance")).to_contain_text("R25,650.00")
-    page.locator(".main-nav").get_by_role("button", name="Overview").click()
-    assert page.get_by_role("radio", name="All accounts").is_checked()
+    navigate(page, "Overview")
+    assert page.locator('input[value=""]').is_checked()
     page.get_by_role("button", name="Hide amounts").click()
     assert "R25,650.00" not in page.locator("body").inner_text()
     assert "R22,150.00" not in page.locator("body").inner_text()
     assert "R3,500.00" not in page.locator("body").inner_text()
     assert "R25,650.00" not in page.locator("body").aria_snapshot()
-    page.locator(".main-nav").get_by_role("button", name="Transactions").click()
+    navigate(page, "Transactions")
     assert "R25,650.00" not in page.locator("body").inner_text()
     page.get_by_role("button", name="Show amounts").click()
 
@@ -85,32 +98,28 @@ with sync_playwright() as playwright:
         balance = page.locator(".selected-balance-amount strong")
         expect(balance).to_contain_text("R25,650.00")
         assert balance.evaluate("el => { const r=el.getBoundingClientRect(); return r.left>=0 && r.right<=innerWidth && el.scrollWidth<=el.clientWidth+1 }"), width
-        assert page.get_by_role("combobox", name="Account", exact=True).is_visible(), width
-        if width <= 767:
-            page.locator(".bottom-nav").get_by_role("button", name="Overview").click()
-        else:
-            page.locator(".main-nav").get_by_role("button", name="Overview").click()
+        assert page.locator(".account-button").is_visible(), width
+        navigate(page, "Overview")
         assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
         expect(page.locator(".account-option-amount")).to_have_count(3)
+        page.locator(".account-button").click()
         for amount in page.locator(".account-option-amount").all():
             assert amount.evaluate("el => { const r=el.getBoundingClientRect(); return r.left>=0 && r.right<=innerWidth && el.scrollWidth<=el.clientWidth+1 }"), width
-        if width <= 767:
-            page.locator(".bottom-nav").get_by_role("button", name="Transactions").click()
-        else:
-            page.locator(".main-nav").get_by_role("button", name="Transactions").click()
+        page.locator(".account-button").click()
+        navigate(page, "Transactions")
     for width, height in ((667, 375), (844, 390), (1024, 768)):
         page.set_viewport_size({"width": width, "height": height})
         assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), (width, height)
     # A 640px window at 200% browser zoom has a 320px CSS viewport.
     page.set_viewport_size({"width": 320, "height": 900})
     assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
-    page.get_by_role("combobox", name="Account", exact=True).focus()
-    expect(page.get_by_role("combobox", name="Account", exact=True)).to_be_focused()
+    page.locator(".account-button").focus()
+    expect(page.locator(".account-button")).to_be_focused()
     check_text_resize(page)
     page.reload(wait_until="networkidle")
     page.set_viewport_size({"width": 1024, "height": 900})
-    page.locator(".main-nav").get_by_role("button", name="Overview").click()
-    expect(page.get_by_role("heading", name="Your accounts")).to_be_visible()
+    navigate(page, "Overview")
+    expect(page.locator(".account-button")).to_be_visible()
     check_text_resize(page)
     page.close()
     assert not errors, errors
@@ -118,6 +127,8 @@ with sync_playwright() as playwright:
     period, period_errors = sign_in(browser, "fixture-f14")
     expect(period.locator(".account-option")).to_have_count(2)
     expect(period.locator(".account-option-amount").first).to_have_text("R10,000.00")
+    period.locator(".period-picker summary").click()
+    period.get_by_role("button", name="Custom dates").click()
     period.get_by_label("From", exact=True).fill("2026-09-01")
     period.get_by_label("To", exact=True).fill("2026-09-30")
     period.get_by_role("button", name="Apply period").click()

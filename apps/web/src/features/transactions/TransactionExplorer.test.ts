@@ -64,14 +64,18 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it("uses one cursor source for table and cards, resets filters, and hides amounts", async () => {
+it("uses one responsive row source for keyset pages, resets filters, and hides amounts", async () => {
   getTransactions.mockImplementation(async (filters: { cursor?: string }) =>
     page(filters.cursor ? null : "next"),
   );
   const wrapper = mountExplorer();
   await flushPromises();
   expect(wrapper.findAll(".activity-table tbody tr")).toHaveLength(1);
-  expect(wrapper.findAll(".activity-card")).toHaveLength(1);
+  expect(wrapper.findAll(".activity-section")).toHaveLength(1);
+  expect(wrapper.get(".activity-section .subsection-title").text()).toBe(
+    "Posted transactions",
+  );
+  expect(wrapper.findAll(".activity-card")).toHaveLength(0);
   expect(wrapper.text()).toContain("−R240.00");
   await wrapper.get(".activity-pagination button:last-child").trigger("click");
   await flushPromises();
@@ -82,6 +86,30 @@ it("uses one cursor source for table and cards, resets filters, and hides amount
   expect(getTransactions.mock.calls.at(-1)?.[0].status).toBe("PENDING");
   await wrapper.setProps({ hidden: true });
   expect(wrapper.text()).not.toContain("R240.00");
+  wrapper.unmount();
+});
+
+it("returns to the first cursor when the same chart category is activated again", async () => {
+  getTransactions.mockImplementation(async (filters: { cursor?: string }) =>
+    page(filters.cursor ? null : "next"),
+  );
+  const wrapper = mountExplorer();
+  await flushPromises();
+  wrapper.vm.applyCategory("GROCERIES");
+  await flushPromises();
+  expect(getTransactions.mock.calls.at(-1)?.[0]).toMatchObject({
+    category: "GROCERIES",
+    cursor: undefined,
+  });
+  await wrapper.get(".activity-pagination button:last-child").trigger("click");
+  await flushPromises();
+  expect(getTransactions.mock.calls.at(-1)?.[0].cursor).toBe("next");
+  wrapper.vm.applyCategory("GROCERIES");
+  await flushPromises();
+  expect(getTransactions.mock.calls.at(-1)?.[0]).toMatchObject({
+    category: "GROCERIES",
+    cursor: undefined,
+  });
   wrapper.unmount();
 });
 

@@ -10,6 +10,7 @@ it("rejects a period after the dataset reference date and accepts its last day",
       referenceDate: "2026-10-31",
     },
   });
+  await wrapper.get(".period-popover button:last-of-type").trigger("click");
   await wrapper.get("#to").setValue("2026-11-01");
   await wrapper.get("form").trigger("submit");
   expect(wrapper.emitted("apply-period")).toBeUndefined();
