@@ -32,7 +32,21 @@ def check_text_resize(page):
     }""")
     for width in (320, 360, 375, 430, 600, 640, 767, 768, 820, 840, 1024):
         page.set_viewport_size({"width": width, "height": 900})
-        assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
+        overflow = page.evaluate("""() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          viewportWidth: innerWidth,
+          elements: [...document.querySelectorAll('*')]
+            .map(el => ({
+              tag: el.tagName,
+              className: String(el.className),
+              text: el.textContent?.trim().slice(0, 40),
+              right: Math.round(el.getBoundingClientRect().right)
+            }))
+            .filter(el => el.right > innerWidth + 1)
+            .sort((left, right) => right.right - left.right)
+            .slice(0, 8)
+        })""")
+        assert overflow["scrollWidth"] <= overflow["viewportWidth"], (width, overflow)
 
 
 with sync_playwright() as playwright:
