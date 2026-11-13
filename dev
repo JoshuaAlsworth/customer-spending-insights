@@ -2,16 +2,32 @@
 set -eu
 
 command=${1:-}
+valid_project() {
+  case "$1" in ''|[!a-z0-9]*|*[!a-z0-9_-]*) return 1 ;; esac
+  [ "${#1}" -le 63 ]
+}
+usage_error() { echo "Usage: $1" >&2; exit 2; }
 case "$command" in
+  help)
+    [ "$#" -eq 1 ] || usage_error './dev help'
+    cat <<'HELP'
+Usage: ./dev <command>
+  up, down, status, logs, credentials
+  demo <run-id> --approve
+  test:docker <api|web|python|browser|all>
+  check, test, build, format
+  provision, fixture, data:generate, data:validate, data:import
+  data:demo, data:benchmark, simulate:provision, simulate
+Set CSI_WEB_PORT for a different loopback web port.
+Set CSI_COMPOSE_PROJECT for an isolated Compose project.
+HELP
+    ;;
   up)
-    if [ ! -f .env ]; then
-      echo 'Create .env with distinct generated POSTGRES_PASSWORD, API_DB_PASSWORD and CURSOR_SECRET first.' >&2
-      exit 1
-    fi
-    docker compose up --build -d --wait
+    [ "$#" -eq 1 ] || usage_error './dev up'
+    sh tools/dev/local.sh up
     ;;
   provision)
-    if [ "$#" -ne 2 ] || [ -z "$2" ] || [ ! -f .env ]; then
+    if [ "$#" -ne 2 ] || ! valid_project "$2" || [ ! -f .env ]; then
       echo 'Usage: ./dev provision <explicit-compose-project-name> (requires .env)' >&2
       exit 2
     fi
@@ -19,7 +35,7 @@ case "$command" in
     docker compose -p "$2" run --rm db-provision
     ;;
   fixture)
-    if [ "$#" -ne 2 ] || [ -z "$2" ] || [ "${CSI_ISOLATED_TEST_DB:-}" != 1 ] || [ ! -f .env ]; then
+    if [ "$#" -ne 2 ] || ! valid_project "$2" || [ "${CSI_ISOLATED_TEST_DB:-}" != 1 ] || [ ! -f .env ]; then
       echo 'Usage: CSI_ISOLATED_TEST_DB=1 ./dev fixture <explicit-isolated-compose-project-name>' >&2
       exit 2
     fi
@@ -30,7 +46,7 @@ case "$command" in
   data:demo|data:benchmark)
     profile=${command#data:}
     output="generated-data/$profile"
-    if [ "$#" -ne 3 ] || [ "$2" != "$3" ]; then
+    if [ "$#" -ne 3 ] || ! valid_project "$2" || [ "$2" != "$3" ]; then
       echo "Usage: ./dev $command <explicit-compose-project-name> <same-name-to-approve-target>" >&2
       exit 2
     fi
@@ -50,24 +66,54 @@ case "$command" in
     ;;
   data:import)
     [ "$#" -eq 4 ] || { echo 'Usage: ./dev data:import <output-directory> <compose-project-name> <same-name-to-approve-target>' >&2; exit 2; }
-    [ -n "$3" ] && [ "$3" = "$4" ] || { echo 'Explicit target approval must match the Compose project' >&2; exit 2; }
+    valid_project "$3" && [ "$3" = "$4" ] || { echo 'Explicit target approval must match the Compose project' >&2; exit 2; }
     dataset_path=$(cd "$2" 2>/dev/null && pwd -P) || { echo 'Invalid dataset directory' >&2; exit 2; }
     (cd tools/data-generator && uv run --locked python -m csi_data import "$dataset_path" --project "$3" --approve-target "$4")
     ;;
   simulate:provision)
+    [ "$#" -eq 4 ] || [ "$#" -eq 5 ] || usage_error './dev simulate:provision <project> <project> --fixture|--dataset <directory>'
+    valid_project "$2" && [ "$2" = "$3" ] || usage_error './dev simulate:provision <project> <project> --fixture|--dataset <directory>'
+    if [ "$#" -eq 4 ]; then
+      [ "$4" = --fixture ] || usage_error './dev simulate:provision <project> <project> --fixture'
+    else
+      [ "$4" = --dataset ] && [ -n "$5" ] || usage_error './dev simulate:provision <project> <project> --dataset <directory>'
+    fi
     shift
     (cd tools/data-generator && uv run --locked python -m csi_data.simulator_approval "$@")
     ;;
   simulate)
+    [ "$#" -ge 4 ] && valid_project "$2" && [ "$2" = "$3" ] || usage_error './dev simulate <project> <project> pending|post|cancel ...'
+    case "$4" in
+      pending) [ "$#" -eq 10 ] || usage_error './dev simulate <project> <project> pending <key> <account> <merchant> <amount> <time> <description>' ;;
+      post) [ "$#" -eq 8 ] || usage_error './dev simulate <project> <project> post <key> <authorization> <amount> <time>' ;;
+      cancel) [ "$#" -eq 7 ] || usage_error './dev simulate <project> <project> cancel <key> <authorization> <time>' ;;
+      *) usage_error './dev simulate <project> <project> pending|post|cancel ...' ;;
+    esac
     shift
     python3 tools/simulator/cli.py "$@"
     ;;
-  down) docker compose down ;;
+  down|status|logs|credentials)
+    [ "$#" -eq 1 ] || usage_error "./dev $command"
+    sh tools/dev/local.sh "$@"
+    ;;
+  demo)
+    [ "$#" -eq 3 ] && [ "$3" = --approve ] || usage_error './dev demo <run-id> --approve'
+    case "$2" in ''|*[!a-z0-9-]*) usage_error './dev demo <lowercase-run-id> --approve' ;; esac
+    [ "${#2}" -le 30 ] || usage_error './dev demo <lowercase-run-id> --approve'
+    sh tools/dev/local.sh "$@"
+    ;;
+  test:docker)
+    [ "$#" -eq 2 ] || usage_error './dev test:docker <api|web|python|browser|all>'
+    case "$2" in api|web|python|browser|all) ;; *) usage_error './dev test:docker <api|web|python|browser|all>' ;; esac
+    sh tools/dev/test-docker.sh "$2"
+    ;;
   build)
+    [ "$#" -eq 1 ] || usage_error './dev build'
     (cd apps/api && ./gradlew bootJar)
     pnpm build
     ;;
   check)
+    [ "$#" -eq 1 ] || usage_error './dev check'
     (cd apps/api && ./gradlew spotlessCheck)
     (cd apps/api && ./gradlew test)
     pnpm --filter web api:check
@@ -77,11 +123,13 @@ case "$command" in
     docker compose --env-file .env.example config --quiet
     ;;
   format)
+    [ "$#" -eq 1 ] || usage_error './dev format'
     (cd apps/api && ./gradlew spotlessApply)
     pnpm --filter web exec prettier --write .
     (cd tools/data-generator && uv run --locked ruff format . ../simulator)
     ;;
   test)
+    [ "$#" -eq 1 ] || usage_error './dev test'
     (cd apps/api && ./gradlew clean test)
     python3 - <<'PY'
 from pathlib import Path
@@ -97,7 +145,7 @@ PY
     (cd tools/data-generator && uv run --locked pytest -q)
     ;;
   *)
-    echo 'Usage: ./dev {up|provision|fixture|down|build|check|format|test|data:demo|data:benchmark|data:generate|data:validate|data:import|simulate:provision|simulate}' >&2
+    echo 'Run ./dev help for available commands.' >&2
     exit 2
     ;;
 esac

@@ -3,6 +3,22 @@ set -eu
 
 : "${API_DB_PASSWORD:?API_DB_PASSWORD is required}"
 
+existing_role=$(psql -X -q -A -t -v ON_ERROR_STOP=1 -h "${DB_HOST:-db}" \
+  -U customer_insights -d customer_insights \
+  -c "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='customer_insights_api')")
+case "$existing_role" in
+  t)
+    if ! PGPASSWORD="$API_DB_PASSWORD" psql -X -q -A -t -v ON_ERROR_STOP=1 \
+      -h "${DB_HOST:-db}" -U customer_insights_api -d customer_insights \
+      -c 'SELECT 1' >/dev/null 2>&1; then
+      echo 'Existing API role credential does not authenticate; provisioning aborted without changes.' >&2
+      exit 1
+    fi
+    ;;
+  f) ;;
+  *) echo 'Could not verify the API database role.' >&2; exit 1 ;;
+esac
+
 # Deliberately invoked by ./dev provision for a named Compose project; never by API startup.
 psql -h "${DB_HOST:-db}" -U customer_insights -d customer_insights -v ON_ERROR_STOP=1 -v api_password="$API_DB_PASSWORD" <<'SQL'
 BEGIN;
@@ -46,7 +62,6 @@ BEGIN
 END $$;
 SELECT 'CREATE ROLE customer_insights_api LOGIN NOINHERIT PASSWORD ' || quote_literal(:'api_password')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'customer_insights_api') \gexec
-SELECT 'ALTER ROLE customer_insights_api LOGIN NOINHERIT PASSWORD ' || quote_literal(:'api_password') \gexec
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE ALL ON SCHEMA public FROM customer_insights_api;
 REVOKE CREATE, TEMPORARY ON DATABASE customer_insights FROM PUBLIC;
