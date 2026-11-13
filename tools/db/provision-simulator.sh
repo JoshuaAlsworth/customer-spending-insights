@@ -4,6 +4,21 @@ set -eu
 : "${SIMULATOR_APPROVED_DATASET_ID:?Approved dataset ID is required}"
 : "${SIMULATOR_APPROVED_SEED_HASH:?Approved seed hash is required}"
 : "${SIMULATOR_APPROVED_EPOCH:=}"
+existing_role=$(psql -X -q -A -t -v ON_ERROR_STOP=1 -h db \
+  -U customer_insights -d customer_insights \
+  -c "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='customer_insights_simulator')")
+case "$existing_role" in
+  t)
+    if ! PGPASSWORD="$SIMULATOR_DB_PASSWORD" psql -X -q -A -t -v ON_ERROR_STOP=1 \
+      -h db -U customer_insights_simulator -d customer_insights \
+      -c 'SELECT 1' >/dev/null 2>&1; then
+      echo 'Existing simulator role credential does not authenticate; provisioning aborted without changes.' >&2
+      exit 1
+    fi
+    ;;
+  f) ;;
+  *) echo 'Could not verify the simulator database role.' >&2; exit 1 ;;
+esac
 psql -X -h db -U customer_insights -d customer_insights -v ON_ERROR_STOP=1 \
   -v simulator_password="$SIMULATOR_DB_PASSWORD" \
   -v approved_dataset_id="$SIMULATOR_APPROVED_DATASET_ID" \
@@ -52,7 +67,6 @@ BEGIN
 END $$;
 SELECT 'CREATE ROLE customer_insights_simulator LOGIN NOINHERIT PASSWORD ' || quote_literal(:'simulator_password')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='customer_insights_simulator') \gexec
-SELECT 'ALTER ROLE customer_insights_simulator LOGIN NOINHERIT PASSWORD ' || quote_literal(:'simulator_password') \gexec
 REVOKE ALL ON SCHEMA public FROM customer_insights_simulator;
 REVOKE CREATE, TEMPORARY ON DATABASE customer_insights FROM customer_insights_simulator;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM customer_insights_simulator;

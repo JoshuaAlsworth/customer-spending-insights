@@ -143,6 +143,9 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except KeyError as error:
+        print(f"Data operation failed: missing manifest field {error}", file=sys.stderr)
+        sys.exit(1)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print(f"Data operation failed: {error}", file=sys.stderr)
         sys.exit(1)
