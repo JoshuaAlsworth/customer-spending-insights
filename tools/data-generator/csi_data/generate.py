@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import math
+from bisect import insort
 from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
@@ -11,6 +13,7 @@ from typing import Any
 from .policy import (
     FILES,
     MERCHANTS,
+    OPENING_BALANCE_BANDS,
     PROFILES,
     PURCHASE_AMOUNTS,
     REFERENCE,
@@ -24,6 +27,23 @@ from .policy import (
     stamp,
     stream,
 )
+
+
+def fundable(
+    opening: int, events: list[tuple[int, int, int]], when: int, amount: int
+) -> bool:
+    """Check actual signed postings through the proposed debit and later planned debits."""
+    balance = opening
+    reached = False
+    for posted, _, signed in events:
+        if posted >= when and not reached:
+            if balance < amount:
+                return False
+            reached = True
+        balance += signed
+        if reached and balance < amount:
+            return False
+    return reached or balance >= amount
 
 
 def generate(
@@ -66,6 +86,7 @@ def generate(
             identity_rng = stream(params["seed"], index, "identity")
             activity_rng = stream(params["seed"], index, "activity")
             relation_rng = stream(params["seed"], index, "relations")
+            balance_rng = stream(params["seed"], index, "opening-balances")
             if profile == "demo":
                 persona = (["STUDENT"] * 4 + ["SALARIED"] * 10 + ["FREELANCER"] * 6)[
                     index
@@ -122,6 +143,7 @@ def generate(
             summary["account_counts"][str(account_count)] += 1
             summary["modifiers"].update(modifiers)
             accounts = []
+            openings = {}
             start = date.fromisoformat(params["start"])
             opened = date(2026, 9, 1) if recent else start
             for account_number in range(account_count):
@@ -133,6 +155,10 @@ def generate(
                     if account_number == 1
                     else "SECONDARY_TRANSACTIONAL"
                 )
+                lower, upper = OPENING_BALANCE_BANDS[kind]
+                opening_balance = balance_rng.randint(lower, upper)
+                if profile == "demo" and index == 1 and account_number == 0:
+                    opening_balance = 0
                 row(
                     writers["accounts.csv"],
                     (
@@ -146,13 +172,29 @@ def generate(
                         "ZAR",
                         opened.isoformat(),
                         "OPEN",
+                        stamp(opened, 0),
+                        opening_balance,
                     ),
                 )
                 counts["accounts.csv"] += 1
                 accounts.append(account_id)
+                openings[account_id] = opening_balance
             if not accounts:
                 continue
             sequence = 0
+            funding_events: dict[str, list[tuple[int, int, int]]] = (
+                {account: [] for account in accounts}
+                if persona == "STUDENT" or len(accounts) > 2
+                else {}
+            )
+
+            def can_fund(account: str, day: date, hour: int, amount: int) -> bool:
+                return account not in funding_events or fundable(
+                    openings[account],
+                    funding_events[account],
+                    day.toordinal() * 24 + hour,
+                    amount,
+                )
 
             def entry(
                 account: str,
@@ -199,6 +241,11 @@ def generate(
                 )
                 counts["posted_entries.csv"] += 1
                 summary["transaction_types"][kind] += 1
+                if account in funding_events:
+                    insort(
+                        funding_events[account],
+                        (day.toordinal() * 24 + hour, sequence, amount),
+                    )
                 return entry_id
 
             if empty:
@@ -223,8 +270,8 @@ def generate(
             payday = identity_rng.randint(20, 28)
             base_salary = identity_rng.randint(600000, 4500000)
             has_rent = identity_rng.random() < 0.7
-            base_rent = identity_rng.randint(150000, 1800000)
-            base_connectivity = identity_rng.randint(4000, 350000)
+            base_rent = round(base_salary * identity_rng.uniform(0.18, 0.38))
+            base_connectivity = identity_rng.randint(4000, 90000)
             activity_rate = (
                 params["high_rate"] if high else params["ordinary_rate"]
             ) * identity_rng.uniform(0.8, 1.2)
@@ -277,7 +324,12 @@ def generate(
                             min(
                                 2500000,
                                 max(
-                                    50000, round(activity_rng.lognormvariate(12.6, 1.0))
+                                    50000,
+                                    round(
+                                        activity_rng.lognormvariate(
+                                            math.log(base_salary / 3), 0.6
+                                        )
+                                    ),
                                 ),
                             ),
                             "Synthetic freelance receipt",
@@ -293,15 +345,20 @@ def generate(
                         "OBLIGATION",
                     )
                 if available > 10:
-                    entry(
-                        accounts[0],
-                        month + timedelta(days=8),
-                        "DEBIT_ORDER",
-                        -round(base_connectivity * activity_rng.uniform(0.98, 1.02)),
-                        "Synthetic connectivity",
-                        "SUBSCRIPTIONS_COMMS",
-                        "OBLIGATION",
+                    connectivity_day = month + timedelta(days=8)
+                    connectivity = round(
+                        base_connectivity * activity_rng.uniform(0.98, 1.02)
                     )
+                    if can_fund(accounts[0], connectivity_day, 12, connectivity):
+                        entry(
+                            accounts[0],
+                            connectivity_day,
+                            "DEBIT_ORDER",
+                            -connectivity,
+                            "Synthetic connectivity",
+                            "SUBSCRIPTIONS_COMMS",
+                            "OBLIGATION",
+                        )
                 if len(accounts) > 1 and available > 12 and activity_rng.random() < 0.4:
                     entry(
                         accounts[1],
@@ -325,26 +382,30 @@ def generate(
                     )
                     activity_kind = activity_rng.random()
                     if not force_card and activity_kind < 0.012:
-                        entry(
-                            accounts[0],
-                            day,
-                            "CASH_WITHDRAWAL",
-                            -activity_rng.randrange(10000, 300001, 5000),
-                            "Synthetic ATM withdrawal",
-                            "CASH_WITHDRAWALS",
-                            "TYPE_RULE",
-                        )
+                        amount = activity_rng.randrange(10000, 300001, 5000)
+                        if can_fund(accounts[0], day, 12, amount):
+                            entry(
+                                accounts[0],
+                                day,
+                                "CASH_WITHDRAWAL",
+                                -amount,
+                                "Synthetic ATM withdrawal",
+                                "CASH_WITHDRAWALS",
+                                "TYPE_RULE",
+                            )
                         continue
                     if not force_card and activity_kind < 0.03:
-                        entry(
-                            accounts[0],
-                            day,
-                            "EXTERNAL_PAYMENT",
-                            -activity_rng.randint(5000, 500000),
-                            "Synthetic external payment",
-                            "MONEY_SENT",
-                            "TYPE_RULE",
-                        )
+                        amount = activity_rng.randint(5000, 500000)
+                        if can_fund(accounts[0], day, 12, amount):
+                            entry(
+                                accounts[0],
+                                day,
+                                "EXTERNAL_PAYMENT",
+                                -amount,
+                                "Synthetic external payment",
+                                "MONEY_SENT",
+                                "TYPE_RULE",
+                            )
                         continue
                     merchant_id, label, mcc, default_category, variant = MERCHANTS[
                         activity_rng.randrange(len(MERCHANTS))
@@ -362,13 +423,56 @@ def generate(
                     mu, sigma, minimum, maximum = PURCHASE_AMOUNTS.get(
                         category, (10.2, 0.8, 1000, 300000)
                     )
+                    purchase_scale = (
+                        0.08 if high else 0.5 if persona == "STUDENT" else 1.0
+                    )
                     amount = -min(
                         maximum,
-                        max(minimum, round(activity_rng.lognormvariate(mu, sigma))),
+                        max(
+                            minimum,
+                            round(
+                                activity_rng.lognormvariate(mu, sigma) * purchase_scale
+                            ),
+                        ),
                     )
                     description = (
                         variant if variant and activity_rng.random() < 0.4 else label
                     )
+                    purchase_account = (
+                        accounts[-1]
+                        if len(accounts) > 2 and activity_rng.random() < 0.12
+                        else accounts[0]
+                    )
+                    purchase_hour = 10 + event_index % 9
+                    if purchase_account == accounts[-1] and len(accounts) > 2:
+                        if not can_fund(purchase_account, day, purchase_hour, -amount):
+                            transfer_amount = max(-amount, 100000)
+                            if not can_fund(accounts[0], day, 9, transfer_amount):
+                                transfer_amount = -amount
+                            if can_fund(accounts[0], day, 9, transfer_amount):
+                                group = f"tg_{index:05d}_{sequence + 1:07d}"
+                                entry(
+                                    accounts[0],
+                                    day,
+                                    "OWN_TRANSFER_OUT",
+                                    -transfer_amount,
+                                    "Own transfer",
+                                    group=group,
+                                    hour=9,
+                                )
+                                entry(
+                                    purchase_account,
+                                    day,
+                                    "OWN_TRANSFER_IN",
+                                    transfer_amount,
+                                    "Own transfer",
+                                    group=group,
+                                    hour=9,
+                                )
+                            else:
+                                purchase_account = accounts[0]
+                    if not can_fund(purchase_account, day, purchase_hour, -amount):
+                        continue
                     auth_id = None
                     if (
                         force_card and event_index == 1
@@ -380,7 +484,7 @@ def generate(
                             writers["authorizations.csv"],
                             (
                                 auth_id,
-                                accounts[0],
+                                purchase_account,
                                 -amount + relation_rng.randint(0, 500),
                                 stamp(day, 9),
                                 "POSTED",
@@ -391,7 +495,7 @@ def generate(
                         )
                         counts["authorizations.csv"] += 1
                     purchase = entry(
-                        accounts[0],
+                        purchase_account,
                         day,
                         "CARD_PURCHASE",
                         amount,
@@ -400,14 +504,14 @@ def generate(
                         provenance,
                         merchant_id,
                         auth=auth_id,
-                        hour=10 + event_index % 9,
+                        hour=purchase_hour,
                     )
                     if day < REFERENCE and (
                         (force_card and event_index == 0)
                         or relation_rng.random() < 0.002
                     ):
                         entry(
-                            accounts[0],
+                            purchase_account,
                             day + timedelta(days=1),
                             "SPEND_REVERSAL",
                             -amount,
@@ -423,7 +527,7 @@ def generate(
                         )
                         if refund_day > day:
                             entry(
-                                accounts[0],
+                                purchase_account,
                                 refund_day,
                                 "SPEND_REFUND",
                                 relation_rng.randint(1, -amount),
@@ -453,28 +557,29 @@ def generate(
                 ):
                     transfer_day = last if cross_month else month + timedelta(days=11)
                     amount = activity_rng.randint(10000, 200000)
-                    group = f"tg_{index:05d}_{month:%Y%m}"
-                    entry(
-                        accounts[0],
-                        transfer_day,
-                        "OWN_TRANSFER_OUT",
-                        -amount,
-                        "Own transfer",
-                        group=group,
-                    )
-                    in_day = (
-                        transfer_day + timedelta(days=1)
-                        if cross_month
-                        else transfer_day
-                    )
-                    entry(
-                        accounts[1],
-                        in_day,
-                        "OWN_TRANSFER_IN",
-                        amount,
-                        "Own transfer",
-                        group=group,
-                    )
+                    if can_fund(accounts[0], transfer_day, 12, amount):
+                        group = f"tg_{index:05d}_{month:%Y%m}"
+                        entry(
+                            accounts[0],
+                            transfer_day,
+                            "OWN_TRANSFER_OUT",
+                            -amount,
+                            "Own transfer",
+                            group=group,
+                        )
+                        in_day = (
+                            transfer_day + timedelta(days=1)
+                            if cross_month
+                            else transfer_day
+                        )
+                        entry(
+                            accounts[1],
+                            in_day,
+                            "OWN_TRANSFER_IN",
+                            amount,
+                            "Own transfer",
+                            group=group,
+                        )
             if profile == "demo" or activity_rng.random() < 0.05:
                 for state in ("PENDING", "CANCELLED"):
                     auth_id = f"au_{index:05d}_{counts['authorizations.csv'] + 1:07d}"
@@ -538,8 +643,10 @@ def generate(
         },
         "independent_expected_results": "contracts/finance/fixtures.json",
     }
+    from .balances import diagnostics
     from .validate import validate_rows
 
     manifest["scenario_coverage"] = validate_rows(output)
+    manifest["balance_diagnostics"] = diagnostics(output)
     (output / "manifest.json").write_bytes(canonical(manifest) + b"\n")
     return manifest

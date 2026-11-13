@@ -176,19 +176,27 @@ components:
         expiresAtEpochMillis: {type: integer, format: int64}
     Account:
       type: object
-      required: [id, alias, maskedSuffix, accountKind]
+      required: [id, alias, maskedSuffix, accountKind, postedBalanceMinor]
       additionalProperties: false
       properties:
         id: {type: string}
         alias: {type: string}
         maskedSuffix: {type: string, pattern: '^[0-9]{4}$'}
         accountKind: {type: string, enum: [EVERYDAY, SAVINGS, SECONDARY_TRANSACTIONAL]}
+        postedBalanceMinor: {$ref: '#/components/schemas/MoneyMinor'}
     AccountsResponse:
       type: object
-      required: [accounts]
+      required: [accounts, combinedPostedBalanceMinor, balanceAsOfDate, currency, dataset]
       additionalProperties: false
       properties:
         accounts: {type: array, maxItems: 4, items: {$ref: '#/components/schemas/Account'}}
+        combinedPostedBalanceMinor:
+          oneOf:
+            - {$ref: '#/components/schemas/MoneyMinor'}
+            - {type: 'null'}
+        balanceAsOfDate: {type: string, format: date}
+        currency: {type: string, enum: [ZAR]}
+        dataset: {$ref: '#/components/schemas/Dataset'}
     Scope:
       type: object
       required: [from, to, accountIds]

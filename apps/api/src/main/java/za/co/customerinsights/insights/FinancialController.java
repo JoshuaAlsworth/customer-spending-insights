@@ -37,9 +37,19 @@ public class FinancialController {
         this.reportingScope = reportingScope;
     }
 
-    public record Account(String id, String alias, String maskedSuffix, String accountKind) {}
+    public record Account(
+            String id,
+            String alias,
+            String maskedSuffix,
+            String accountKind,
+            String postedBalanceMinor) {}
 
-    public record AccountsResponse(List<Account> accounts) {}
+    public record AccountsResponse(
+            List<Account> accounts,
+            String combinedPostedBalanceMinor,
+            LocalDate balanceAsOfDate,
+            String currency,
+            Dataset dataset) {}
 
     public record Scope(LocalDate from, LocalDate to, List<String> accountIds) {}
 
@@ -69,18 +79,51 @@ public class FinancialController {
             Dataset dataset) {}
 
     @GetMapping("/accounts")
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AccountsResponse accounts(Authentication authentication) {
-        return new AccountsResponse(
+        Dataset dataset = reportingScope.dataset(authentication.getName());
+        var cutoff =
+                Timestamp.from(
+                        dataset.referenceDate()
+                                .plusDays(1)
+                                .atStartOfDay(REPORTING_ZONE)
+                                .toInstant());
+        List<Account> accounts =
                 jdbc.query(
-                        "SELECT id,alias,masked_suffix,account_kind FROM accounts WHERE customer_id=? ORDER BY id",
-                        (rs, n) ->
-                                new Account(
-                                        rs.getString(1),
-                                        rs.getString(2),
-                                        rs.getString(3).trim(),
-                                        rs.getString(4)),
-                        authentication.getName()));
+                        "SELECT a.id,a.alias,a.masked_suffix,a.account_kind,a.balance_anchor_at,"
+                                + "a.opening_balance_minor::numeric + COALESCE(p.total,0) "
+                                + "FROM accounts a LEFT JOIN LATERAL ("
+                                + "SELECT sum(e.amount_minor::numeric) AS total FROM posted_entries e "
+                                + "WHERE e.account_id=a.id AND e.posted_at>=a.balance_anchor_at AND e.posted_at<?"
+                                + ") p ON true WHERE a.customer_id=? AND a.status='OPEN' AND a.opened_on<=? ORDER BY a.id",
+                        (rs, n) -> {
+                            if (rs.getTimestamp(5) == null
+                                    || !rs.getTimestamp(5).toInstant().isBefore(cutoff.toInstant())
+                                    || rs.getBigDecimal(6) == null) {
+                                throw new ResponseStatusException(
+                                        HttpStatus.SERVICE_UNAVAILABLE,
+                                        "Account balance unavailable");
+                            }
+                            return new Account(
+                                    rs.getString(1),
+                                    rs.getString(2),
+                                    rs.getString(3).trim(),
+                                    rs.getString(4),
+                                    exact(rs.getBigDecimal(6)).toString());
+                        },
+                        cutoff,
+                        authentication.getName(),
+                        dataset.referenceDate());
+        BigInteger combined = BigInteger.ZERO;
+        for (Account account : accounts) {
+            combined = combined.add(new BigInteger(account.postedBalanceMinor()));
+        }
+        return new AccountsResponse(
+                accounts,
+                accounts.isEmpty() ? null : combined.toString(),
+                dataset.referenceDate(),
+                "ZAR",
+                dataset);
     }
 
     @GetMapping("/dashboard")

@@ -56,7 +56,7 @@ def validate_rows(directory: Path) -> dict[str, bool | int]:
         try:
             database.executescript("""
                 CREATE TABLE customers(id TEXT PRIMARY KEY, login TEXT NOT NULL UNIQUE, modifiers TEXT NOT NULL);
-                CREATE TABLE accounts(id TEXT PRIMARY KEY, owner TEXT NOT NULL, opened TEXT NOT NULL);
+                CREATE TABLE accounts(id TEXT PRIMARY KEY, owner TEXT NOT NULL, opened TEXT NOT NULL, anchor TEXT NOT NULL, opening_minor INTEGER NOT NULL);
                 CREATE TABLE authorizations(id TEXT PRIMARY KEY, account TEXT NOT NULL, status TEXT NOT NULL, occurred TEXT NOT NULL, links INTEGER NOT NULL DEFAULT 0);
                 CREATE TABLE entries(id TEXT PRIMARY KEY, account TEXT NOT NULL, owner TEXT NOT NULL, type TEXT NOT NULL, effect TEXT NOT NULL, amount INTEGER NOT NULL, category TEXT, provenance TEXT, posted TEXT NOT NULL, compensated INTEGER NOT NULL DEFAULT 0);
                 CREATE TABLE events(id TEXT PRIMARY KEY);
@@ -95,20 +95,36 @@ def validate_rows(directory: Path) -> dict[str, bool | int]:
                         "currency",
                         "opened_on",
                         "status",
+                        "balance_anchor_at",
+                        "opening_balance_minor",
                     )
                     if (
-                        record["currency"] != "ZAR"
+                        record["account_kind"]
+                        not in ("EVERYDAY", "SAVINGS", "SECONDARY_TRANSACTIONAL")
+                        or record["status"] not in ("OPEN", "CLOSED")
+                        or not re.fullmatch(r"\d{4}", record["masked_suffix"])
+                        or record["currency"] != "ZAR"
                         or not database.execute(
                             "SELECT 1 FROM customers WHERE id=?",
                             (record["customer_id"],),
                         ).fetchone()
                     ):
-                        fail("Invalid account owner or currency")
+                        fail("Invalid account owner, kind, status or currency")
                     if (
                         not re.fullmatch(r"\d{4}-\d{2}-\d{2}", record["opened_on"])
                         or date.fromisoformat(record["opened_on"]) > REFERENCE
                     ):
                         fail("Invalid account opening date")
+                    anchor = timestamp(record["balance_anchor_at"])
+                    if (
+                        anchor.hour != 0
+                        or anchor.minute != 0
+                        or anchor.second != 0
+                        or anchor.date() < date.fromisoformat(record["opened_on"])
+                        or anchor.date() > REFERENCE
+                    ):
+                        fail("Invalid opening anchor chronology")
+                    opening_minor = minor(record["opening_balance_minor"])
                     if (
                         database.execute(
                             "SELECT count(*) FROM accounts WHERE owner=?",
@@ -118,11 +134,13 @@ def validate_rows(directory: Path) -> dict[str, bool | int]:
                     ):
                         fail("Customer account limit exceeded")
                     database.execute(
-                        "INSERT INTO accounts VALUES (?,?,?)",
+                        "INSERT INTO accounts VALUES (?,?,?,?,?)",
                         (
                             record["account_id"],
                             record["customer_id"],
                             record["opened_on"],
+                            record["balance_anchor_at"],
+                            opening_minor,
                         ),
                     )
                 category_codes = set()
@@ -230,7 +248,7 @@ def validate_rows(directory: Path) -> dict[str, bool | int]:
                     ):
                         fail("Invalid type, sign, effect or currency")
                     account = database.execute(
-                        "SELECT owner,opened FROM accounts WHERE id=?",
+                        "SELECT owner,opened,anchor FROM accounts WHERE id=?",
                         (record["account_id"],),
                     ).fetchone()
                     posted, occurred = (
@@ -241,6 +259,7 @@ def validate_rows(directory: Path) -> dict[str, bool | int]:
                         not account
                         or posted < occurred
                         or posted.date() < date.fromisoformat(account[1])
+                        or record["posted_at"] < account[2]
                         or posted.date() > REFERENCE
                     ):
                         fail("Invalid posting account or chronology")

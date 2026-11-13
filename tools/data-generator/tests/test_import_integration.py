@@ -149,6 +149,43 @@ def test_changed_during_copy_rejected(tmp_path, demo, target, monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "anchor", ["2025-06-01T00:00:00+02:00", "2026-11-01T00:00:00+02:00"]
+)
+def test_direct_import_rejects_invalid_anchor_with_new_hash(
+    tmp_path, demo, target, anchor
+):
+    dataset = tmp_path / "invalid-anchor"
+    shutil.copytree(demo, dataset)
+    accounts = dataset / "accounts.csv"
+    with accounts.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        columns = reader.fieldnames
+        records = list(reader)
+    assert columns is not None
+    account = next(record for record in records if record["account_id"] == "ac_00005_0")
+    account["balance_anchor_at"] = anchor
+    with accounts.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(records)
+    manifest = json.loads((dataset / "manifest.json").read_text())
+    manifest["file_sha256"]["accounts.csv"] = file_digest(accounts)
+    manifest["seed_content_hash"] = digest(
+        canonical(
+            {
+                "files": manifest["file_sha256"],
+                "config_hash": manifest["config_hash"],
+                "policy_hash": manifest["policy_hash"],
+            }
+        )
+    )
+    manifest["dataset_id"] = f"synthetic-demo-{manifest['seed_content_hash'][:20]}"
+    with pytest.raises(subprocess.CalledProcessError):
+        importer.stream_import(dataset, credentials(tmp_path), manifest, target)
+    assert_empty(target)
+
+
+@pytest.mark.parametrize(
     "kind,field,value",
     [
         ("CARD_PURCHASE", "classification_provenance", "TYPE_RULE"),
@@ -205,8 +242,28 @@ def test_valid_import_replay_and_restricted_role(tmp_path, demo, target, monkeyp
     assert initial.stdout.startswith(
         f"{manifest['dataset_id']}|{manifest['seed_content_hash']}|"
     )
+    assert query(target, "SELECT count(*) FROM posted_entries").stdout.strip() == str(
+        manifest["file_counts"]["posted_entries.csv"]
+    )
     assert (
-        query(target, "SELECT count(*) FROM posted_entries").stdout.strip() == "12800"
+        query(
+            target,
+            "SELECT a.opening_balance_minor::numeric + COALESCE(sum(p.amount_minor::numeric),0) "
+            "FROM accounts a LEFT JOIN posted_entries p ON p.account_id=a.id "
+            "AND p.posted_at>=a.balance_anchor_at AND p.posted_at<'2026-11-01 00:00+02' "
+            "WHERE a.id='ac_00005_3' GROUP BY a.id",
+        ).stdout.strip()
+        == manifest["balance_diagnostics"]["accounts"]["ac_00005_3"]["as_of_minor"]
+    )
+    assert (
+        query(
+            target,
+            "SELECT a.opening_balance_minor::numeric + COALESCE(sum(p.amount_minor::numeric),0) "
+            "FROM accounts a LEFT JOIN posted_entries p ON p.account_id=a.id "
+            "AND p.posted_at>=a.balance_anchor_at AND p.posted_at<'2026-11-01 00:00+02' "
+            "WHERE a.id='ac_00004_0' GROUP BY a.id",
+        ).stdout.strip()
+        == manifest["balance_diagnostics"]["accounts"]["ac_00004_0"]["as_of_minor"]
     )
     changed = query(
         target,

@@ -100,6 +100,110 @@ def outcome(result):
     return json.loads(result.stdout)
 
 
+def posted_balance(project, account="f01-everyday"):
+    return state(
+        project,
+        "SELECT a.opening_balance_minor::numeric + COALESCE(("
+        "SELECT sum(p.amount_minor::numeric) FROM posted_entries p "
+        "WHERE p.account_id=a.id AND p.posted_at>=a.balance_anchor_at "
+        "AND p.posted_at<'2026-11-01 00:00+02'),0) "
+        f"FROM accounts a WHERE a.id='{account}'",
+    )
+
+
+def test_f15_exact_pending_post_cancel_and_replay(simulator):
+    project, _ = simulator
+    identity = state(
+        project, "SELECT seed_content_hash||'|'||instance_epoch FROM dataset_instance"
+    )
+    before_revision = int(
+        state(project, "SELECT customer_revision FROM customers WHERE id='fixture-f15'")
+    )
+    assert posted_balance(project, "f15-everyday") == "100000"
+    assert (
+        outcome(
+            simulate(
+                simulator,
+                "pending",
+                "f15pending",
+                "f15-everyday",
+                "sim-test-merchant",
+                25000,
+                "2026-10-30T10:00:00+02:00",
+                "F15 purchase",
+            )
+        )["status"]
+        == "PENDING"
+    )
+    assert posted_balance(project, "f15-everyday") == "100000"
+    assert (
+        outcome(
+            simulate(
+                simulator,
+                "post",
+                "f15post",
+                "sim_auth_f15pending",
+                24000,
+                "2026-10-30T11:00:00+02:00",
+            )
+        )["status"]
+        == "POSTED"
+    )
+    assert posted_balance(project, "f15-everyday") == "76000"
+    assert (
+        outcome(
+            simulate(
+                simulator,
+                "post",
+                "f15post",
+                "sim_auth_f15pending",
+                24000,
+                "2026-10-30T11:00:00+02:00",
+            )
+        )["replayed"]
+        is True
+    )
+    assert posted_balance(project, "f15-everyday") == "76000"
+    assert (
+        outcome(
+            simulate(
+                simulator,
+                "pending",
+                "f15cancelpending",
+                "f15-everyday",
+                "sim-test-merchant",
+                10000,
+                "2026-10-30T12:00:00+02:00",
+                "F15 cancelled purchase",
+            )
+        )["status"]
+        == "PENDING"
+    )
+    assert (
+        outcome(
+            simulate(
+                simulator,
+                "cancel",
+                "f15cancel",
+                "sim_auth_f15cancelpending",
+                "2026-10-30T13:00:00+02:00",
+            )
+        )["status"]
+        == "CANCELLED"
+    )
+    assert posted_balance(project, "f15-everyday") == "76000"
+    assert state(
+        project, "SELECT customer_revision FROM customers WHERE id='fixture-f15'"
+    ) == str(before_revision + 4)
+    assert (
+        state(
+            project,
+            "SELECT seed_content_hash||'|'||instance_epoch FROM dataset_instance",
+        )
+        == identity
+    )
+
+
 def test_pending_post_replay_and_exact_money(simulator):
     project, _ = simulator
     before = state(
@@ -108,6 +212,7 @@ def test_pending_post_replay_and_exact_money(simulator):
     identity = state(
         project, "SELECT seed_content_hash||'|'||instance_epoch FROM dataset_instance"
     )
+    assert posted_balance(project) == "2215000"
     pending = simulate(
         simulator,
         "pending",
@@ -119,6 +224,7 @@ def test_pending_post_replay_and_exact_money(simulator):
         "Test purchase",
     )
     assert outcome(pending)["status"] == "PENDING"
+    assert posted_balance(project) == "2215000"
     assert (
         state(
             project,
@@ -153,6 +259,7 @@ def test_pending_post_replay_and_exact_money(simulator):
         "2026-10-30T11:00:00+02:00",
     )
     assert outcome(posted)["amount_minor"] == -24000
+    assert posted_balance(project) == "2191000"
     assert (
         state(
             project,
@@ -173,6 +280,7 @@ def test_pending_post_replay_and_exact_money(simulator):
         )["replayed"]
         is True
     )
+    assert posted_balance(project) == "2191000"
     assert (
         state(
             project,
@@ -215,6 +323,7 @@ def test_pending_post_replay_and_exact_money(simulator):
 
 def test_cancel_conflict_and_revision(simulator):
     project, _ = simulator
+    before_balance = posted_balance(project)
     outcome(
         simulate(
             simulator,
@@ -257,6 +366,7 @@ def test_cancel_conflict_and_revision(simulator):
     assert state(
         project, "SELECT customer_revision FROM customers WHERE id='fixture-f01'"
     ) == str(before + 1)
+    assert posted_balance(project) == before_balance
     assert (
         state(
             project,

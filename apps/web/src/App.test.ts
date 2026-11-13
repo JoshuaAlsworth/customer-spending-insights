@@ -4,6 +4,27 @@ import { QueryClient, VueQueryPlugin } from "@tanstack/vue-query";
 import { expect, it, vi } from "vitest";
 import App from "./App.vue";
 
+const accountResponse = (referenceDate: string, balance = "500000") => ({
+  accounts: [
+    {
+      id: "a1",
+      alias: "Everyday",
+      maskedSuffix: "0042",
+      accountKind: "EVERYDAY",
+      postedBalanceMinor: balance,
+    },
+  ],
+  combinedPostedBalanceMinor: balance,
+  balanceAsOfDate: referenceDate,
+  currency: "ZAR",
+  dataset: {
+    datasetId: "test",
+    instanceEpoch: "epoch",
+    customerRevision: 0,
+    referenceDate,
+  },
+});
+
 it("shows sign in after a rejected session bootstrap", async () => {
   const fetch = vi.fn().mockResolvedValue(new Response("", { status: 401 }));
   vi.stubGlobal("fetch", fetch);
@@ -67,16 +88,7 @@ it("renders the server dashboard after session and account lookup", async () => 
           expiresAtEpochMillis: Date.now() + 900000,
         }
       : path.endsWith("/accounts")
-        ? {
-            accounts: [
-              {
-                id: "a1",
-                alias: "Everyday",
-                maskedSuffix: "0042",
-                accountKind: "EVERYDAY",
-              },
-            ],
-          }
+        ? accountResponse("2026-11-11")
         : dataset;
     return new Response(JSON.stringify(value), {
       status: 200,
@@ -145,16 +157,7 @@ it("keeps cached spending concealed after failed logout until a server session c
             expiresAtEpochMillis: Date.now() + 900000,
           }
         : path.endsWith("/accounts")
-          ? {
-              accounts: [
-                {
-                  id: "a1",
-                  alias: "Everyday",
-                  maskedSuffix: "0042",
-                  accountKind: "EVERYDAY",
-                },
-              ],
-            }
+          ? accountResponse("2026-10-31")
           : dashboard;
     return new Response(JSON.stringify(body), {
       status: 200,
@@ -258,18 +261,7 @@ it("rejects a late previous-customer dashboard after logout and new login", asyn
         }),
       );
     if (path.endsWith("/accounts"))
-      return Promise.resolve(
-        response({
-          accounts: [
-            {
-              id: "a1",
-              alias: "Everyday",
-              maskedSuffix: "0042",
-              accountKind: "EVERYDAY",
-            },
-          ],
-        }),
-      );
+      return Promise.resolve(response(accountResponse("2026-10-31")));
     if (path.endsWith("/dashboard"))
       return customer === "c1"
         ? oldDashboard

@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/vue-query";
 import AppHeader from "./app/AppHeader.vue";
 import SignIn from "./features/auth/SignIn.vue";
 import ScopeControls from "./features/accounts/ScopeControls.vue";
+import AccountBalances from "./features/accounts/AccountBalances.vue";
 import OverviewView from "./features/overview/OverviewView.vue";
 import TransactionExplorer from "./features/transactions/TransactionExplorer.vue";
 import {
@@ -105,6 +106,55 @@ const dashboard = useQuery({
   retry: false,
   refetchOnWindowFocus: false,
 });
+const snapshotMismatch = computed(() => {
+  const accountDataset = accounts.data.value?.dataset;
+  const analysisDataset = dashboard.data.value?.dataset;
+  return (
+    !!accountDataset &&
+    !!analysisDataset &&
+    (accountDataset.datasetId !== analysisDataset.datasetId ||
+      accountDataset.instanceEpoch !== analysisDataset.instanceEpoch ||
+      accountDataset.customerRevision !== analysisDataset.customerRevision ||
+      accountDataset.referenceDate !== analysisDataset.referenceDate)
+  );
+});
+
+watch(
+  () => accounts.data.value?.accounts,
+  (owned) => {
+    if (
+      owned &&
+      selectedAccount.value &&
+      !owned.some((item) => item.id === selectedAccount.value)
+    )
+      selectedAccount.value = "";
+  },
+);
+watch(
+  [
+    snapshotMismatch,
+    () => accounts.isFetching.value,
+    () => dashboard.isFetching.value,
+    reconciling,
+    refreshing,
+  ],
+  ([
+    mismatch,
+    accountsFetching,
+    dashboardFetching,
+    isReconciling,
+    isRefreshing,
+  ]) => {
+    if (
+      mismatch &&
+      !accountsFetching &&
+      !dashboardFetching &&
+      !isReconciling &&
+      !isRefreshing
+    )
+      void reconcileActivity();
+  },
+);
 
 watch(
   () => [accounts.error.value, dashboard.error.value],
@@ -199,13 +249,22 @@ async function refresh() {
   status.value = "";
   refreshing.value = true;
   try {
+    const accountResult = await accounts.refetch();
+    if (accountResult.isError) {
+      status.value =
+        "Account balances could not be refreshed. Retry when ready.";
+      return;
+    }
+    const analysisResult = accountResult.data?.accounts.length
+      ? await dashboard.refetch()
+      : null;
     await Promise.all([
-      accounts.refetch(),
-      dashboard.refetch(),
       client.invalidateQueries({ queryKey: ["transactions"] }),
       client.invalidateQueries({ queryKey: ["recent-transactions"] }),
       client.invalidateQueries({ queryKey: ["transaction-history-presence"] }),
     ]);
+    if (analysisResult?.isError)
+      status.value = "Spending data could not be refreshed. Retry when ready.";
   } finally {
     refreshing.value = false;
   }
@@ -222,7 +281,13 @@ async function reconcileActivity() {
   reconciliationAttempted.value = true;
   reconciling.value = true;
   try {
-    await dashboard.refetch();
+    const accountResult = await accounts.refetch();
+    if (accountResult.isError) {
+      status.value =
+        "Updated account balances are unavailable. Refresh to retry.";
+      return;
+    }
+    if (accountResult.data?.accounts.length) await dashboard.refetch();
     await Promise.all([
       client.invalidateQueries({ queryKey: ["transactions"] }),
       client.invalidateQueries({ queryKey: ["recent-transactions"] }),
@@ -234,8 +299,9 @@ async function reconcileActivity() {
 }
 function activityAligned() {
   if (
+    !snapshotMismatch.value &&
     status.value ===
-    "Updated activity is available. Refresh to align your view."
+      "Updated activity is available. Refresh to align your view."
   )
     status.value = "";
 }
@@ -319,21 +385,19 @@ onUnmounted(() => {
         {{ view === "overview" ? "Your spending" : "Transactions" }}
       </h1>
       <span
-        v-if="!sessionLocked && dashboard.data.value?.dataset.referenceDate"
+        v-if="
+          !sessionLocked &&
+          !snapshotMismatch &&
+          dashboard.data.value?.dataset.referenceDate
+        "
         class="data-through"
         >Data through {{ dashboard.data.value.dataset.referenceDate }}</span
       >
     </div>
-    <ScopeControls
-      v-if="accounts.data.value && dashboard.data.value && !sessionLocked"
-      v-model:account-id="selectedAccount"
-      :from="from"
-      :to="to"
-      :accounts="accounts.data.value.accounts"
-      :reference-date="dashboard.data.value.dataset.referenceDate"
-      @apply-period="setPeriod"
-    />
-    <p v-if="accounts.isPending.value" class="state-panel" role="status">
+    <p v-if="sessionLocked" class="state-panel" role="status">
+      Spending is locked until your session is checked.
+    </p>
+    <p v-else-if="accounts.isPending.value" class="state-panel" role="status">
       Loading your accounts…
     </p>
     <div
@@ -344,26 +408,42 @@ onUnmounted(() => {
       Accounts could not be loaded.
       <button type="button" @click="accounts.refetch()">Retry</button>
     </div>
-    <p
-      v-else-if="accounts.data.value?.accounts.length === 0"
-      class="state-panel"
-    >
-      No accounts are available for this customer.
-    </p>
-    <template v-else-if="sessionLocked">
-      <p class="state-panel" role="status">
-        Spending is locked until your session is checked.
+    <template v-else-if="accounts.data.value">
+      <p v-if="snapshotMismatch" class="state-panel" role="status">
+        Account balances and spending are updating. Refresh if this continues.
       </p>
+      <AccountBalances
+        v-else
+        v-model:account-id="selectedAccount"
+        :response="accounts.data.value"
+        :hidden="hidden"
+        :compact="view === 'transactions'"
+      />
+      <ScopeControls
+        v-if="
+          accounts.data.value.accounts.length &&
+          dashboard.data.value &&
+          !snapshotMismatch
+        "
+        :from="from"
+        :to="to"
+        :reference-date="dashboard.data.value.dataset.referenceDate"
+        @apply-period="setPeriod"
+      />
     </template>
-    <template v-else-if="view === 'overview'">
+    <template
+      v-if="
+        !sessionLocked &&
+        accounts.isSuccess.value &&
+        accounts.data.value?.accounts.length &&
+        view === 'overview' &&
+        !snapshotMismatch
+      "
+    >
       <p v-if="refreshing" class="state-panel" role="status">
         Refreshing your spending…
       </p>
-      <p
-        v-else-if="dashboard.isPending.value"
-        class="state-panel"
-        role="status"
-      >
+      <p v-if="dashboard.isPending.value" class="state-panel" role="status">
         Loading your spending…
       </p>
       <div
@@ -410,6 +490,9 @@ onUnmounted(() => {
     <TransactionExplorer
       v-if="
         dashboard.data.value &&
+        !snapshotMismatch &&
+        accounts.isSuccess.value &&
+        !dashboard.isError.value &&
         !sessionLocked &&
         accounts.data.value?.accounts.length
       "

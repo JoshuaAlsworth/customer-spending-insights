@@ -1,16 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import type { Account } from "../../api/client";
+import { ref, watch } from "vue";
 
 const props = defineProps<{
-  accounts: Account[];
-  accountId: string;
   from: string;
   to: string;
   referenceDate: string;
 }>();
 const emit = defineEmits<{
-  "update:accountId": [value: string];
   "apply-period": [period: { from: string; to: string }];
 }>();
 const draftFrom = ref(props.from);
@@ -22,9 +18,6 @@ watch(
     draftFrom.value = props.from;
     draftTo.value = props.to;
   },
-);
-const selected = computed(() =>
-  props.accounts.find((account) => account.id === props.accountId),
 );
 
 function applyPeriod() {
@@ -53,26 +46,6 @@ function applyPeriod() {
 
 <template>
   <form class="global-filters" @submit.prevent="applyPeriod">
-    <div class="field account-field">
-      <label for="account">Account</label>
-      <select
-        id="account"
-        :value="accountId"
-        @change="
-          emit('update:accountId', ($event.target as HTMLSelectElement).value)
-        "
-      >
-        <option value="">All accounts</option>
-        <option
-          v-for="account in accounts"
-          :key="account.id"
-          :value="account.id"
-        >
-          {{ account.alias }} · •• {{ account.maskedSuffix }}
-        </option>
-      </select>
-      <span v-if="selected" class="sr-only">{{ selected.accountKind }}</span>
-    </div>
     <div class="field">
       <label for="from">From</label
       ><input id="from" v-model="draftFrom" type="date" required />

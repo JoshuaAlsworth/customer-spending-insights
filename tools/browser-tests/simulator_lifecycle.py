@@ -36,7 +36,10 @@ with sync_playwright() as playwright:
     page.get_by_role("button", name="Sign in").click()
     expect(page.locator(".summary-card .metric-value")).to_have_count(3)
     before = page.request.get(base + "/api/v1/dashboard").json()
+    balances_before = page.request.get(base + "/api/v1/accounts").json()
+    expect(page.locator(".account-option").first).to_contain_text("R25,650.00")
     page.locator(".main-nav").get_by_role("button", name="Transactions").click()
+    expect(page.locator(".selected-balance")).to_contain_text("R25,650.00")
     old_cursor = page.request.get(base + "/api/v1/transactions?limit=1").json()["nextCursor"]
     assert old_cursor
 
@@ -53,6 +56,8 @@ with sync_playwright() as playwright:
     page.keyboard.press("Escape")
     pending_summary = page.request.get(base + "/api/v1/dashboard").json()["summary"]
     assert pending_summary == before["summary"]
+    assert page.request.get(base + "/api/v1/accounts").json()["combinedPostedBalanceMinor"] == balances_before["combinedPostedBalanceMinor"]
+    expect(page.locator(".selected-balance")).to_contain_text("R25,650.00")
 
     operator("simulate", project, project, "post", "browserpost", "sim_auth_browserpending",
              "24000", "2026-10-30T11:00:00+02:00")
@@ -67,8 +72,12 @@ with sync_playwright() as playwright:
     after = page.request.get(base + "/api/v1/dashboard").json()
     assert int(after["summary"]["netSpendingMinor"]) - int(before["summary"]["netSpendingMinor"]) == 24000
     assert int(after["summary"]["netMovementMinor"]) - int(before["summary"]["netMovementMinor"]) == -24000
+    balances_after = page.request.get(base + "/api/v1/accounts").json()
+    assert int(balances_after["combinedPostedBalanceMinor"]) - int(balances_before["combinedPostedBalanceMinor"]) == -24000
+    expect(page.locator(".selected-balance")).to_contain_text("R25,410.00")
     page.locator(".main-nav").get_by_role("button", name="Overview").click()
     expect(page.locator(".summary-card .metric-value")).to_have_count(3)
+    expect(page.locator(".account-option").first).to_contain_text("R25,410.00")
 
     operator("simulate", project, project, "pending", "browsercancelpending", "f01-everyday",
              "browser-sim-merchant", "4300", "2026-10-30T12:00:00+02:00", "Browser cancel")
@@ -80,6 +89,8 @@ with sync_playwright() as playwright:
     expect(cancelled).to_have_count(1)
     expect(cancelled).to_contain_text("Cancelled")
     assert page.request.get(base + "/api/v1/dashboard").json()["summary"] == after["summary"]
+    assert page.request.get(base + "/api/v1/accounts").json()["combinedPostedBalanceMinor"] == balances_after["combinedPostedBalanceMinor"]
+    expect(page.locator(".selected-balance")).to_contain_text("R25,410.00")
 
     other = browser.new_page(viewport={"width": 1280, "height": 900})
     other.goto(base, wait_until="networkidle")

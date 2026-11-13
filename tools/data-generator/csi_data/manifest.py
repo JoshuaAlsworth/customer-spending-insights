@@ -21,6 +21,7 @@ from .policy import (
 
 
 def verify_files(output: Path) -> dict[str, Any]:
+    from .balances import diagnostics
     from .validate import validate_rows
 
     manifest_bytes = (output / "manifest.json").read_bytes()
@@ -140,4 +141,6 @@ def verify_files(output: Path) -> dict[str, Any]:
         raise ValueError("Manifest distribution summary mismatch")
     if manifest.get("scenario_coverage") != validate_rows(output):
         raise ValueError("Manifest scenario coverage mismatch")
+    if manifest.get("balance_diagnostics") != diagnostics(output):
+        raise ValueError("Manifest balance diagnostics mismatch")
     return manifest
