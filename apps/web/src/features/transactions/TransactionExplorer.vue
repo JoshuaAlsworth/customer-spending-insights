@@ -84,7 +84,11 @@ function applyCategory(code: string) {
   pageCursors.value = [undefined];
   page.value = 0;
 }
-defineExpose({ applyCategory });
+function resetPagination() {
+  pageCursors.value = [undefined];
+  page.value = 0;
+}
+defineExpose({ applyCategory, resetPagination });
 const label = (value: string) =>
   value in categoryPolicy.categories
     ? categoryPolicy.categories[value as CategoryCode]
@@ -468,7 +472,7 @@ onBeforeUnmount(() => {
       {{
         reconciling
           ? "Checking for updated activity…"
-          : "Updated activity is available. Reload this page to align your view."
+          : "Updated activity is available. Use Refresh to align your view."
       }}
     </p>
     <p

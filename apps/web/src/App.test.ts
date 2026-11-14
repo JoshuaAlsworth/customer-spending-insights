@@ -128,6 +128,86 @@ it("renders the server dashboard after session and account lookup", async () => 
   vi.unstubAllGlobals();
 });
 
+it("refreshes posted balances and spending repeatedly without reloading", async () => {
+  let posted = false;
+  let accountRequests = 0;
+  const response = (body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  const fetch = vi.fn(async (request: Request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/auth/session"))
+      return response({
+        customerId: "c1",
+        displayName: "Sample Customer",
+        expiresAtEpochMillis: Date.now() + 900000,
+      });
+    if (path.endsWith("/accounts")) {
+      accountRequests++;
+      return response({
+        ...accountResponse("2026-10-31", posted ? "491500" : "500000"),
+        dataset: {
+          ...accountResponse("2026-10-31").dataset,
+          customerRevision: posted ? 1 : 0,
+        },
+      });
+    }
+    if (path.endsWith("/dashboard")) {
+      const spending = posted ? "8500" : "0";
+      return response({
+        scope: { from: "2026-10-01", to: "2026-10-31", accountIds: ["a1"] },
+        summary: {
+          incomeMinor: "0",
+          grossSpendingMinor: spending,
+          spendingCreditsMinor: "0",
+          netSpendingMinor: spending,
+          ownAccountFlowMinor: "0",
+          netMovementMinor: posted ? "-8500" : "0",
+        },
+        categories: [],
+        trend: [],
+        dataset: {
+          ...accountResponse("2026-10-31").dataset,
+          customerRevision: posted ? 1 : 0,
+        },
+      });
+    }
+    return response({
+      items: [],
+      nextCursor: null,
+      dataset: {
+        ...accountResponse("2026-10-31").dataset,
+        customerRevision: posted ? 1 : 0,
+      },
+    });
+  });
+  vi.stubGlobal("fetch", fetch);
+  const wrapper = mount(App, {
+    global: {
+      plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]],
+    },
+  });
+  try {
+    await flushPromises();
+    await flushPromises();
+    expect(wrapper.get(".account-button").text()).toContain("R5,000.00");
+    posted = true;
+    await wrapper.get('[aria-label="Refresh data"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.get(".account-button").text()).toContain("R4,915.00");
+    expect(wrapper.get(".summary-card.primary").text()).toContain("−R85.00");
+    await wrapper.get('[aria-label="Refresh data"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.get(".account-button").text()).toContain("R4,915.00");
+    expect(accountRequests).toBe(3);
+  } finally {
+    wrapper.unmount();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("applies a chart category again after reset without changing the spending scope", async () => {
   location.hash = "#overview";
   const dashboard = {

@@ -19,6 +19,7 @@ import {
 const client = useQueryClient();
 const session = ref<Session | null>(null);
 const booting = ref(true);
+const refreshing = ref(false);
 const reconciliationAttempted = ref(false);
 const reconciling = ref(false);
 const generation = ref(0);
@@ -66,6 +67,7 @@ function clearSensitiveState() {
   sessionLocked.value = false;
   reconciliationAttempted.value = false;
   reconciling.value = false;
+  refreshing.value = false;
   client.clear();
 }
 
@@ -144,9 +146,22 @@ watch(
     () => accounts.isFetching.value,
     () => dashboard.isFetching.value,
     reconciling,
+    refreshing,
   ],
-  ([mismatch, accountsFetching, dashboardFetching, isReconciling]) => {
-    if (mismatch && !accountsFetching && !dashboardFetching && !isReconciling)
+  ([
+    mismatch,
+    accountsFetching,
+    dashboardFetching,
+    isReconciling,
+    isRefreshing,
+  ]) => {
+    if (
+      mismatch &&
+      !accountsFetching &&
+      !dashboardFetching &&
+      !isReconciling &&
+      !isRefreshing
+    )
       void reconcileActivity();
   },
 );
@@ -229,14 +244,115 @@ function signedIn(current: Session) {
   status.value = "";
   channel?.postMessage("session-changed");
 }
+async function refresh() {
+  if (!session.value || sessionLocked.value || refreshing.value) return;
+  const customerId = session.value.customerId;
+  const currentGeneration = generation.value;
+  const scope = () =>
+    `${selectedAccount.value}|${periodSet.value}|${from.value}|${to.value}`;
+  const currentScope = scope();
+  const stillCurrent = () =>
+    session.value?.customerId === customerId &&
+    generation.value === currentGeneration &&
+    !sessionLocked.value;
+  const failed = (error: unknown, message: string) => {
+    if (error instanceof ApiError && error.status === 401) {
+      clearSensitiveState();
+      status.value = "Your session ended. Sign in again to view your spending.";
+    } else status.value = message;
+  };
+  refreshing.value = true;
+  status.value = "";
+  transactionExplorer.value?.resetPagination();
+  try {
+    await Promise.all([
+      client.cancelQueries({
+        queryKey: ["transactions", customerId, currentGeneration],
+      }),
+      client.cancelQueries({
+        queryKey: ["recent-transactions", customerId, currentGeneration],
+      }),
+      client.cancelQueries({
+        queryKey: [
+          "transaction-history-presence",
+          customerId,
+          currentGeneration,
+        ],
+      }),
+      client.cancelQueries({
+        queryKey: ["transaction-detail", customerId, currentGeneration],
+      }),
+    ]);
+    const accountResult = await accounts.refetch();
+    if (!stillCurrent()) return;
+    if (accountResult.isError) {
+      failed(
+        accountResult.error,
+        "Account balances could not be refreshed. Try again.",
+      );
+      return;
+    }
+    if (scope() !== currentScope) return;
+    if (accountResult.data?.accounts.length) {
+      const dashboardResult = await dashboard.refetch();
+      if (!stillCurrent()) return;
+      if (dashboardResult.isError) {
+        failed(
+          dashboardResult.error,
+          "Spending data could not be refreshed. Try again.",
+        );
+        return;
+      }
+      if (scope() !== currentScope) return;
+      if (snapshotMismatch.value) {
+        status.value =
+          "Account balances and spending did not align. Try Refresh again.";
+        return;
+      }
+    }
+    await Promise.all([
+      client.invalidateQueries({
+        queryKey: ["transactions", customerId, currentGeneration],
+      }),
+      client.invalidateQueries({
+        queryKey: ["recent-transactions", customerId, currentGeneration],
+      }),
+      client.invalidateQueries({
+        queryKey: [
+          "transaction-history-presence",
+          customerId,
+          currentGeneration,
+        ],
+      }),
+      client.invalidateQueries({
+        queryKey: ["transaction-detail", customerId, currentGeneration],
+      }),
+    ]);
+  } catch (error) {
+    if (stillCurrent())
+      failed(error, "Activity could not be refreshed. Try again.");
+  } finally {
+    if (
+      session.value?.customerId === customerId &&
+      generation.value === currentGeneration
+    )
+      refreshing.value = false;
+  }
+}
 watch([selectedAccount, from, to], () => {
   reconciliationAttempted.value = false;
 });
 async function reconcileActivity() {
-  if (!session.value || sessionLocked.value || reconciling.value) return;
+  if (
+    !session.value ||
+    sessionLocked.value ||
+    reconciling.value ||
+    refreshing.value
+  )
+    return;
   if (reconciliationAttempted.value) {
     status.value =
-      "Updated activity is available. Reload this page to align your view.";
+      "Updated activity is available. Use Refresh to align your view.";
     return;
   }
   reconciliationAttempted.value = true;
@@ -245,7 +361,7 @@ async function reconcileActivity() {
     const accountResult = await accounts.refetch();
     if (accountResult.isError) {
       status.value =
-        "Updated account balances are unavailable. Reload this page to retry.";
+        "Updated account balances are unavailable. Use Refresh to retry.";
       return;
     }
     if (accountResult.data?.accounts.length) await dashboard.refetch();
@@ -262,7 +378,7 @@ function activityAligned() {
   if (
     !snapshotMismatch.value &&
     status.value ===
-      "Updated activity is available. Reload this page to align your view."
+      "Updated activity is available. Use Refresh to align your view."
   )
     status.value = "";
 }
@@ -323,7 +439,9 @@ onUnmounted(() => {
     :signed-in="!!session"
     :view="view"
     :session-locked="sessionLocked"
+    :refreshing="refreshing"
     @navigate="setView"
+    @refresh="refresh"
     @sign-out="signOut"
   />
   <main v-if="booting" class="signed-out">
@@ -331,6 +449,9 @@ onUnmounted(() => {
   </main>
   <SignIn v-else-if="!session" :status="status" @signed-in="signedIn" />
   <main v-else id="dashboard" class="shell">
+    <p v-if="refreshing" class="sr-only" role="status">
+      Refreshing account balances and spending…
+    </p>
     <p v-if="status" class="state-panel error" role="alert">
       {{ status }}
     </p>
@@ -374,7 +495,7 @@ onUnmounted(() => {
       <template v-else-if="accounts.data.value">
         <div class="global-filters">
           <p v-if="snapshotMismatch" class="state-panel" role="status">
-            Account balances and spending are updating. Reload if this
+            Account balances and spending are updating. Use Refresh if this
             continues.
           </p>
           <AccountBalances
@@ -456,20 +577,29 @@ onUnmounted(() => {
       <TransactionExplorer
         v-if="
           dashboard.data.value &&
-          !snapshotMismatch &&
-          accounts.isSuccess.value &&
-          !dashboard.isError.value &&
           !sessionLocked &&
           accounts.data.value?.accounts.length
         "
-        v-show="view === 'transactions'"
+        v-show="
+          view === 'transactions' &&
+          !snapshotMismatch &&
+          !accounts.isError.value &&
+          !dashboard.isError.value
+        "
         ref="transactionExplorer"
         :customer-id="session.customerId"
         :account-ids="accountIds"
         :from="from"
         :to="to"
         :hidden="hidden"
-        :active="view === 'transactions' && !sessionLocked"
+        :active="
+          view === 'transactions' &&
+          !sessionLocked &&
+          !refreshing &&
+          !snapshotMismatch &&
+          !accounts.isError.value &&
+          !dashboard.isError.value
+        "
         :generation="generation"
         :dataset-epoch="dashboard.data.value.dataset.instanceEpoch"
         :dashboard-revision="dashboard.data.value.dataset.customerRevision"

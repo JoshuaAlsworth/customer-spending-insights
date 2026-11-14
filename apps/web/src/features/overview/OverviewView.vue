@@ -391,7 +391,7 @@ const trendHeight = (value: string) => {
         {{
           reconciling
             ? "Checking for updated activity…"
-            : "Updated activity is available. Reload this page to align your view."
+            : "Updated activity is available. Use Refresh to align your view."
         }}
       </p>
       <p v-else-if="recent.isPending.value" class="recent-empty" role="status">

@@ -5,9 +5,11 @@ const props = defineProps<{
   signedIn: boolean;
   view: "overview" | "transactions";
   sessionLocked: boolean;
+  refreshing: boolean;
 }>();
 const emit = defineEmits<{
   navigate: [view: "overview" | "transactions"];
+  refresh: [];
   "sign-out": [];
 }>();
 const menuOpen = ref(false);
@@ -105,6 +107,19 @@ onUnmounted(() => {
       </nav>
     </div>
     <div v-if="signedIn" class="head-right">
+      <button
+        type="button"
+        class="head-btn refresh-button"
+        :aria-label="refreshing ? 'Refreshing data' : 'Refresh data'"
+        :aria-busy="refreshing"
+        :disabled="sessionLocked || refreshing"
+        @click="emit('refresh')"
+      >
+        <span class="head-icon" aria-hidden="true">↻</span>
+        <span class="head-label">{{
+          refreshing ? "Refreshing…" : "Refresh"
+        }}</span>
+      </button>
       <details class="profile-menu">
         <summary aria-label="Account menu">
           <svg
