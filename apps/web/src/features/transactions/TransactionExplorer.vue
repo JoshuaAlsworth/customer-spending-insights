@@ -396,10 +396,21 @@ onBeforeUnmount(() => {
       aria-label="Filter transactions"
     >
       <label class="search-field"
-        >Search transactions<input
+        ><span class="sr-only">Search transactions</span
+        ><svg
+          class="search-field-icon"
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="m16 16 5 5" /></svg
+        ><input
           v-model="searchInput"
           type="search"
-          placeholder="Merchant or description"
+          placeholder="Search transactions"
           :aria-invalid="!!searchError"
           :aria-describedby="
             searchError ? 'transaction-search-error' : undefined
@@ -457,7 +468,7 @@ onBeforeUnmount(() => {
       {{
         reconciling
           ? "Checking for updated activity…"
-          : "Updated activity is available. Refresh to align your view."
+          : "Updated activity is available. Reload this page to align your view."
       }}
     </p>
     <p

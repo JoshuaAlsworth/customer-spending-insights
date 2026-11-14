@@ -1,4 +1,4 @@
-"""Focused browser journey for local operator simulation and manual refresh."""
+"""Focused browser journey for local operator simulation and page reload."""
 
 import os
 import subprocess
@@ -32,7 +32,7 @@ with sync_playwright() as playwright:
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(base, wait_until="networkidle")
     page.get_by_label("Login ID").fill("fixture-f01")
-    page.get_by_label("Password").fill("fixture-only-password")
+    page.get_by_label("Password", exact=True).fill("fixture-only-password")
     page.get_by_role("button", name="Sign in").click()
     expect(page.locator(".summary-card .metric-value")).to_have_count(3)
     page.locator(".account-button").click()
@@ -40,7 +40,7 @@ with sync_playwright() as playwright:
     expect(page.locator(".summary-card .metric-value")).to_have_count(3)
     before = page.request.get(base + "/api/v1/dashboard").json()
     balances_before = page.request.get(base + "/api/v1/accounts").json()
-    expect(page.locator(".account-option").first).to_contain_text("R25,650.00")
+    expect(page.locator(".account-option").last).to_contain_text("R25,650.00")
     page.locator(".sidebar-nav").get_by_role("button", name="Transactions").click()
     expect(page.locator(".selected-balance")).to_contain_text("R25,650.00")
     old_cursor = page.request.get(base + "/api/v1/transactions?limit=1").json()["nextCursor"]
@@ -50,7 +50,7 @@ with sync_playwright() as playwright:
              "browser-sim-merchant", "25000", "2026-10-30T10:00:00+02:00", "Browser pending")
     stale = page.request.get(base + "/api/v1/transactions", params={"limit": "1", "cursor": old_cursor})
     assert stale.status == 409 and stale.json()["code"] == "STALE_CURSOR"
-    page.get_by_role("button", name="Refresh data").click()
+    page.reload(wait_until="networkidle")
     pending_row = page.locator(".activity-table tbody tr").filter(has_text="Browser simulator merchant")
     expect(pending_row).to_have_count(1)
     expect(page.locator(".activity-section").filter(has_text="Browser simulator merchant")).to_contain_text("Pending transactions")
@@ -64,7 +64,7 @@ with sync_playwright() as playwright:
 
     operator("simulate", project, project, "post", "browserpost", "sim_auth_browserpending",
              "24000", "2026-10-30T11:00:00+02:00")
-    page.get_by_role("button", name="Refresh data").click()
+    page.reload(wait_until="networkidle")
     posted_row = page.locator(".activity-table tbody tr").filter(has_text="Browser simulator merchant")
     expect(posted_row).to_have_count(1)
     expect(page.locator(".activity-section").filter(has_text="Browser simulator merchant")).to_contain_text("Posted transactions")
@@ -80,12 +80,12 @@ with sync_playwright() as playwright:
     expect(page.locator(".selected-balance")).to_contain_text("R25,410.00")
     page.locator(".sidebar-nav").get_by_role("button", name="Overview").click()
     expect(page.locator(".summary-card .metric-value")).to_have_count(3)
-    expect(page.locator(".account-option").first).to_contain_text("R25,410.00")
+    expect(page.locator(".account-option").last).to_contain_text("R25,410.00")
 
     operator("simulate", project, project, "pending", "browsercancelpending", "f01-everyday",
              "browser-sim-merchant", "4300", "2026-10-30T12:00:00+02:00", "Browser cancel")
     operator("simulate", project, project, "cancel", "browsercancel", "sim_auth_browsercancelpending", "2026-10-30T12:30:00+02:00")
-    page.get_by_role("button", name="Refresh data").click()
+    page.reload(wait_until="networkidle")
     page.locator(".sidebar-nav").get_by_role("button", name="Transactions").click()
     page.locator(".transaction-filter-menu summary").click()
     page.get_by_label("Status").select_option("CANCELLED")
@@ -99,11 +99,11 @@ with sync_playwright() as playwright:
     other = browser.new_page(viewport={"width": 1280, "height": 900})
     other.goto(base, wait_until="networkidle")
     other.get_by_label("Login ID").fill("fixture-f03")
-    other.get_by_label("Password").fill("fixture-only-password")
+    other.get_by_label("Password", exact=True).fill("fixture-only-password")
     other.get_by_role("button", name="Sign in").click()
     other.locator(".sidebar-nav").get_by_role("button", name="Transactions").click()
     expect(other.locator(".activity-table tbody tr").filter(has_text="Browser simulator merchant")).to_have_count(0)
     assert other.request.get(base + "/api/v1/simulate").status == 403
     other.close()
     browser.close()
-print("Simulator browser pending, post, cancel and manual refresh passed")
+print("Simulator browser pending, post, cancel and page reload passed")

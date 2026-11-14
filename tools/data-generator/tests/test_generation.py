@@ -138,6 +138,19 @@ def test_demo_scenarios_and_policy(demo):
         item["account_id"] == "ac_00002_0" and item["lifecycle_status"] == "PENDING"
         for item in auth
     )
+    showcase = [item for item in auth if item["account_id"] == "ac_00006_0"]
+    assert sum(item["lifecycle_status"] == "PENDING" for item in showcase) == 3
+    assert sum(item["lifecycle_status"] == "CANCELLED" for item in showcase) == 2
+    assert (
+        len(
+            {
+                item["merchant_id"]
+                for item in showcase
+                if item["lifecycle_status"] != "POSTED"
+            }
+        )
+        == 5
+    )
     assert all(item["source_event_id"].startswith("gen:auth:") for item in auth)
     assert any(item["lifecycle_status"] == "POSTED" for item in auth)
     assert manifest["file_sha256"] == {

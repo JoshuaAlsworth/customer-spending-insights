@@ -86,15 +86,16 @@ it("keeps fixed-date balances while account and period selection scope both rout
     });
   });
   vi.stubGlobal("fetch", fetch);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const wrapper = mount(App, {
     global: {
       plugins: [
         [
           VueQueryPlugin,
           {
-            queryClient: new QueryClient({
-              defaultOptions: { queries: { retry: false } },
-            }),
+            queryClient,
           },
         ],
       ],
@@ -230,15 +231,16 @@ it("hides mixed account and dashboard revisions until one reconciliation aligns 
     throw new Error(`Unexpected URL ${path}`);
   });
   vi.stubGlobal("fetch", fetch);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const wrapper = mount(App, {
     global: {
       plugins: [
         [
           VueQueryPlugin,
           {
-            queryClient: new QueryClient({
-              defaultOptions: { queries: { retry: false } },
-            }),
+            queryClient,
           },
         ],
       ],
@@ -248,7 +250,8 @@ it("hides mixed account and dashboard revisions until one reconciliation aligns 
     await flushPromises();
     await flushPromises();
     expect(wrapper.text()).toContain("R1,000.00");
-    await wrapper.get('[aria-label="Refresh data"]').trigger("click");
+    await queryClient.invalidateQueries({ queryKey: ["accounts"] });
+    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     await vi.waitFor(() => expect(dashboardCalls).toBe(3));
     expect(wrapper.text()).toContain(
       "Account balances and spending are updating",

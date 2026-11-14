@@ -8,6 +8,146 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+.login-view {
+  display: grid;
+  grid-template-columns: minmax(440px, 48%) 1fr;
+  min-height: 100dvh;
+  place-items: stretch;
+  padding: 0;
+  background: white;
+}
+.login-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding: 36px clamp(30px, 5vw, 78px);
+}
+.login-brand {
+  color: var(--deep);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+.login-content {
+  width: min(100%, 420px);
+  margin: auto;
+}
+.login-content h1 {
+  margin: 0 0 30px;
+  font-size: clamp(35px, 3.2vw, 50px);
+  font-weight: 560;
+  letter-spacing: -0.055em;
+  line-height: 1.12;
+}
+.login-view .sign-card {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+.login-view .sign-card > label:not(.remember-row) {
+  margin-top: 14px;
+  color: var(--ink);
+  font-weight: 500;
+}
+.login-view .sign-card input:not([type="checkbox"]) {
+  height: 52px;
+  padding: 0 15px;
+}
+.password-field {
+  position: relative;
+}
+.password-field input {
+  padding-right: 74px !important;
+}
+.password-field button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--deep);
+  font-size: 13px;
+}
+.remember-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 20px;
+  cursor: pointer;
+  font-weight: 400;
+}
+.remember-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--blue);
+}
+.login-submit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  padding: 0 17px;
+  border: 1px solid var(--blue);
+  border-radius: 8px;
+  background: var(--blue);
+  color: white;
+  font-size: 15px;
+  font-weight: 550;
+}
+.login-submit:hover {
+  background: var(--deep);
+}
+.login-submit span {
+  font-size: 21px;
+}
+.login-art {
+  min-width: 0;
+  overflow: hidden;
+  background: #d8eaff;
+}
+.login-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@media (max-width: 699px) {
+  .login-view {
+    grid-template-columns: 1fr;
+  }
+  .login-pane {
+    position: relative;
+    min-height: 100dvh;
+    padding: 26px 24px 30px;
+  }
+  .login-pane::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: clamp(120px, 20svh, 190px);
+    background: linear-gradient(145deg, #eaf4ff 5%, #a7c7f2 50%, #467bd4 100%);
+    clip-path: ellipse(115% 90% at 57% 100%);
+    pointer-events: none;
+  }
+  .login-content {
+    margin: clamp(95px, 14svh, 145px) auto auto;
+  }
+  .login-art {
+    display: none;
+  }
+}
+@media (min-width: 700px) and (max-width: 850px) {
+  .login-view {
+    grid-template-columns: minmax(0, 66%) minmax(0, 34%);
+  }
+}
 .skip-link {
   position: fixed;
   top: -60px;
@@ -117,7 +257,7 @@ body {
   display: flex;
   align-items: center;
   min-height: 44px;
-  padding: 0 38px 0 14px;
+  padding: 0 42px 0 14px;
   background: white;
   border: 1px solid #cdd5e1;
   border-radius: 8px;
@@ -153,6 +293,9 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.account-button-short {
+  display: none;
+}
 .selected-balance-amount {
   display: grid;
   justify-items: end;
@@ -163,6 +306,7 @@ body {
   color: var(--deep);
   font-size: 14px;
   font-weight: 600;
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
 .selected-balance-amount small {
@@ -182,7 +326,7 @@ body {
   z-index: 30;
   width: 100%;
   margin: 0;
-  padding: 6px;
+  padding: 8px;
   background: white;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -195,10 +339,10 @@ body {
 }
 .account-option {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  min-height: 44px;
+  min-height: 42px;
   padding: 8px 12px;
   border: 0;
   border-radius: 6px;
@@ -206,16 +350,34 @@ body {
 }
 .account-option:hover,
 .account-option.selected {
-  background: #f5f8ff;
+  background: #eaf1ff;
 }
 .account-option input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--blue);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.account-option::before {
+  content: "";
+  grid-column: 1;
+  grid-row: 1;
+  color: var(--blue);
+}
+.account-option.selected::before {
+  content: "✓";
+}
+.account-option:focus-within {
+  outline: 3px solid #8fb1f7;
+  outline-offset: 1px;
 }
 .account-option-name {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .account-option-name strong {
   display: block;
@@ -230,9 +392,12 @@ body {
   font-size: 11px;
 }
 .account-option-amount {
+  grid-column: 3;
+  grid-row: 1;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
 }
 .period-control {
   width: 300px;
@@ -302,6 +467,7 @@ body {
 .metric-name {
   margin-bottom: 12px;
   font-size: 14px;
+  font-weight: 500;
 }
 .metric-value {
   font-size: 26px;
@@ -314,7 +480,7 @@ body {
   color: var(--deep);
 }
 .analysis {
-  align-items: start;
+  align-items: stretch;
 }
 .panel {
   padding: 22px 24px;
@@ -323,24 +489,27 @@ body {
   gap: 14px;
 }
 .category-row {
-  grid-template-columns: minmax(110px, 190px) minmax(45px, 1fr) minmax(
-      98px,
-      auto
-    );
+  grid-template-columns: 158px minmax(110px, 1fr) 116px;
   width: 100%;
-  padding: 3px 4px;
+  padding: 2px 4px;
   border: 0;
   border-radius: 6px;
   background: none;
   color: inherit;
   text-align: left;
   font-weight: 400;
+  font-size: 14px;
+}
+.category-name {
+  white-space: nowrap;
 }
 .category-row:hover,
 .category-row:focus-visible {
   background: #f5f8ff;
 }
 .chart-key {
+  display: inline-flex;
+  align-items: center;
   margin-top: 18px;
   color: var(--muted);
   font-size: 11px;
@@ -354,6 +523,18 @@ body {
   background: none;
   color: var(--blue);
   font-weight: 500;
+}
+@media (min-width: 600px) {
+  .categories-collapsed .category-row:nth-child(n + 9) {
+    display: none;
+  }
+  .category-toggle.desktop-needed {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    margin: 0 0 0 20px;
+    padding: 0;
+  }
 }
 .trend-plot {
   height: 304px;
@@ -379,8 +560,22 @@ body {
   padding: 0;
 }
 .trend-column:hover .trend-bar,
-.trend-column:focus-visible .trend-bar {
+.trend-column:focus-visible .trend-bar,
+.trend-column[aria-pressed="true"] .trend-bar {
   background: var(--blue);
+}
+.trend-reading {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  margin: 0;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: white;
+  box-shadow: 0 1px 5px #17243b20;
+  color: var(--deep);
+  font-size: 12px;
+  font-weight: 600;
 }
 .trend-labels {
   margin-left: 52px;
@@ -409,6 +604,13 @@ body {
 .recent-heading {
   padding: 22px 24px 18px;
 }
+.recent-heading h2,
+.section-head h2 {
+  font-weight: 600;
+}
+.section-head h2 {
+  line-height: 1.25;
+}
 .transactions {
   overflow: hidden;
 }
@@ -420,8 +622,16 @@ body {
 }
 .recent-table th,
 .recent-table td {
-  padding: 14px 18px;
+  padding: 8px 18px;
   border-bottom: 1px solid #e9edf2;
+}
+.recent-table th {
+  height: 43px;
+  padding: 0 18px;
+}
+.recent-table td {
+  height: 58px;
+  font-size: 13px;
 }
 .recent-table th,
 .activity-table th {
@@ -458,6 +668,40 @@ body {
 }
 .transaction-tools .search-field {
   flex: 0 1 340px;
+  position: relative;
+  min-width: min(100%, 300px);
+}
+.transaction-tools .search-field-icon {
+  position: absolute;
+  left: 13px;
+  top: 13px;
+  width: 17px;
+  height: 17px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.transaction-tools .search-field input {
+  padding-left: 40px;
+  padding-right: 13px;
+  font-size: 14px;
+}
+.transaction-filter-menu > summary {
+  min-height: 44px;
+}
+.profile-menu summary svg {
+  width: 19px;
+  height: 19px;
+}
+.profile-popover {
+  width: 136px;
+}
+.profile-popover .sign-out-button {
+  color: #bd252d;
+  font-weight: 500;
+}
+.profile-popover .sign-out-button span {
+  padding: 0 7px 0 0;
+  color: inherit;
 }
 .transaction-filter-menu {
   position: relative;
@@ -487,7 +731,21 @@ body {
 }
 .activity-table th,
 .activity-table td {
-  padding: 16px 18px;
+  padding: 8px 18px;
+}
+.activity-table th {
+  height: 43px;
+  padding: 0 18px;
+}
+.activity-section:first-child .activity-table th {
+  height: 49px;
+}
+.activity-table td {
+  height: 58px;
+  font-size: 13px;
+}
+.activity-section:first-child .activity-table td {
+  height: 49px;
 }
 .activity-section + .activity-section {
   border-top: 1px solid var(--border);
@@ -774,6 +1032,7 @@ body {
     color: var(--deep);
     font-size: 18px;
     font-weight: 600;
+    line-height: 1.2;
   }
   .main-nav {
     display: none;
@@ -821,6 +1080,14 @@ body {
     width: 100%;
     min-width: 0;
     min-height: 56px;
+    padding: 0 34px 0 12px;
+  }
+  .account-button-name:not(.account-button-short) {
+    display: none;
+  }
+  .account-button-short {
+    display: block;
+    font-size: 14px;
   }
   .selected-balance-amount small {
     display: block;
@@ -830,6 +1097,10 @@ body {
   }
   .period-control {
     width: 100%;
+  }
+  .period-picker .select-button {
+    min-height: 42px;
+    padding: 0 30px 0 12px;
   }
   .period-long {
     display: none;
@@ -876,7 +1147,7 @@ body {
     border-left: 0;
   }
   .metric-name {
-    font-size: 13px;
+    font-size: 12px;
     margin-bottom: 4px;
   }
   .metric-value {
@@ -922,6 +1193,7 @@ body {
     min-height: 70px;
   }
   .recent-table td {
+    height: auto;
     padding: 0;
     border: 0;
   }
@@ -947,6 +1219,13 @@ body {
   .category-row {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 5px;
+    padding: 4px;
+  }
+  .category-rows {
+    gap: 8px;
+  }
+  .category-name {
+    white-space: normal;
   }
   .categories-collapsed .category-row:nth-child(n + 5) {
     display: none;
@@ -963,6 +1242,7 @@ body {
     min-height: 44px;
     margin-top: 10px;
     padding: 0;
+    font-size: 13px;
   }
   .trend-plot {
     height: 189px;

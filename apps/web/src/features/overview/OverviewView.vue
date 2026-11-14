@@ -74,6 +74,24 @@ const recentMismatch = computed(
 const shown = (value: string, signed = false) =>
   props.hidden ? "••••" : money(value, signed);
 const categoriesExpanded = ref(false);
+watch(
+  () => [
+    props.accountIds.join(","),
+    props.dashboard.scope.from,
+    props.dashboard.scope.to,
+  ],
+  () => (categoriesExpanded.value = false),
+);
+const selectedTrendFrom = ref<string | null>(null);
+const selectedTrend = computed(() =>
+  props.dashboard.trend.find(
+    (bucket) => bucket.from === selectedTrendFrom.value,
+  ),
+);
+watch(
+  () => props.dashboard,
+  () => (selectedTrendFrom.value = null),
+);
 const orderedCategories = computed(() =>
   [...props.dashboard.categories].sort((left, right) => {
     const a = BigInt(left.netSpendingMinor);
@@ -198,7 +216,12 @@ const trendHeight = (value: string) => {
       <article class="summary-card primary">
         <p class="metric-name">Money out</p>
         <div class="metric-value">
-          {{ shown(dashboard.summary.netSpendingMinor, true) }}
+          {{
+            shown(
+              (-BigInt(dashboard.summary.netSpendingMinor)).toString(),
+              true,
+            )
+          }}
         </div>
         <p
           v-if="!hidden && BigInt(dashboard.summary.netSpendingMinor) < 0n"
@@ -224,15 +247,6 @@ const trendHeight = (value: string) => {
         <div class="metric-value">
           {{ shown(dashboard.summary.netMovementMinor, true) }}
         </div>
-        <details v-if="!hidden" class="net-help">
-          <summary>How calculated</summary>
-          <p>
-            Money in {{ money(dashboard.summary.incomeMinor) }} − money out
-            {{ money(dashboard.summary.netSpendingMinor) }} + own-account flow
-            {{ money(dashboard.summary.ownAccountFlowMinor, true) }} =
-            {{ money(dashboard.summary.netMovementMinor, true) }}.
-          </p>
-        </details>
       </article>
     </section>
     <section class="analysis" aria-label="Spending analysis">
@@ -248,7 +262,7 @@ const trendHeight = (value: string) => {
           No posted spending or refunds in this period.
         </p>
         <template v-else>
-          <div class="category-rows">
+          <div id="overview-categories" class="category-rows">
             <button
               v-for="item in shownCategories"
               :key="item.categoryCode"
@@ -257,7 +271,9 @@ const trendHeight = (value: string) => {
               :aria-label="`Filter transactions by ${item.displayName}`"
               @click="emit('category', item.categoryCode)"
             >
-              <span class="category-name">{{ item.displayName }}</span>
+              <span class="category-name" :title="item.displayName">{{
+                item.displayName
+              }}</span>
               <span class="signed-track" aria-hidden="true"
                 ><span
                   class="signed-bar"
@@ -276,7 +292,9 @@ const trendHeight = (value: string) => {
             v-if="dashboard.categories.length > 4"
             type="button"
             class="category-toggle"
+            :class="{ 'desktop-needed': dashboard.categories.length > 8 }"
             :aria-expanded="categoriesExpanded"
+            aria-controls="overview-categories"
             @click="categoriesExpanded = !categoriesExpanded"
           >
             {{
@@ -323,7 +341,9 @@ const trendHeight = (value: string) => {
                 class="trend-column"
                 type="button"
                 :aria-label="`${trendLabel(bucket.from, bucket.to)}, ${money(bucket.netSpendingMinor)}`"
+                :aria-pressed="selectedTrendFrom === bucket.from"
                 :title="`${trendLabel(bucket.from, bucket.to)} · ${money(bucket.netSpendingMinor)}`"
+                @click="selectedTrendFrom = bucket.from"
               >
                 <span
                   class="trend-bar"
@@ -342,6 +362,10 @@ const trendHeight = (value: string) => {
                 trendLabel(bucket.from, bucket.to)
               }}</span>
             </div>
+            <p v-if="selectedTrend" class="trend-reading" role="status">
+              {{ trendLabel(selectedTrend.from, selectedTrend.to) }} ·
+              {{ money(selectedTrend.netSpendingMinor) }}
+            </p>
           </div>
           <div v-if="trendPeak" class="trend-peak">
             <span>Highest spending period</span
@@ -350,23 +374,6 @@ const trendHeight = (value: string) => {
               {{ money(trendPeak.netSpendingMinor) }}</strong
             >
           </div>
-          <details class="exact-values">
-            <summary>View exact values</summary>
-            <div class="trend-list" role="list">
-              <div
-                v-for="bucket in dashboard.trend"
-                :key="bucket.from"
-                class="trend-row"
-                role="listitem"
-              >
-                <span>{{ bucket.from }} – {{ bucket.to }}</span>
-                <strong
-                  :class="{ negative: BigInt(bucket.netSpendingMinor) < 0n }"
-                  >{{ money(bucket.netSpendingMinor) }}</strong
-                >
-              </div>
-            </div>
-          </details>
           <p v-if="hasNegativeTrend" class="negative-note">
             A negative period has more spending credits than outgoings.
           </p>
@@ -384,7 +391,7 @@ const trendHeight = (value: string) => {
         {{
           reconciling
             ? "Checking for updated activity…"
-            : "Updated activity is available. Refresh to align your view."
+            : "Updated activity is available. Reload this page to align your view."
         }}
       </p>
       <p v-else-if="recent.isPending.value" class="recent-empty" role="status">

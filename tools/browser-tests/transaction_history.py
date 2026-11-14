@@ -22,7 +22,7 @@ with sync_playwright() as playwright:
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.goto(base, wait_until="networkidle")
     page.get_by_label("Login ID").fill("fixture-f09")
-    page.get_by_label("Password").fill("fixture-only-password")
+    page.get_by_label("Password", exact=True).fill("fixture-only-password")
     page.get_by_role("button", name="Sign in").click()
     expect(page.locator(".recent-table tbody tr")).to_have_count(4)
     navigate(page, "Transactions")
@@ -72,17 +72,14 @@ with sync_playwright() as playwright:
     expect(page.locator(".activity-table tbody tr")).to_have_count(13)
     page.set_viewport_size({"width": 375, "height": 812})
     expect(page.locator(".activity-table").first).to_be_visible()
-    page.get_by_role("button", name="Hide amounts").click()
-    assert "R439.00" not in page.locator("body").inner_text()
+    expect(page.get_by_role("button", name="Hide amounts")).to_have_count(0)
     first = page.locator(".activity-link").first
     first.click()
     expect(page.locator(".detail-close")).to_be_focused()
-    assert "R439.00" not in page.get_by_role("dialog").inner_text()
     page.keyboard.press("Tab")
     expect(page.locator(".detail-close")).to_be_focused()
     page.keyboard.press("Escape")
     expect(first).to_be_focused()
-    page.get_by_role("button", name="Show amounts").click()
     first_amount = page.locator(".activity-table td.amount").first.inner_text().splitlines()[0]
     for width in (320, 375, 390, 430, 599, 600, 601, 767, 768, 769, 820, 839, 840, 841, 1024, 1280, 1440):
         page.set_viewport_size({"width": width, "height": 900})
@@ -100,10 +97,6 @@ with sync_playwright() as playwright:
         if width < 600:
             assert page.locator(".mobile-nav-anchor").is_visible()
             assert page.evaluate("() => { window.scrollTo(0, document.body.scrollHeight); return document.querySelector('.activity-pagination').getBoundingClientRect().bottom <= innerHeight - 50 }") , width
-        if width in (768, 841, 1280):
-            page.get_by_role("button", name="Hide amounts").click()
-            assert "R439.00" not in page.locator(".activity-surface").inner_text(), width
-            page.get_by_role("button", name="Show amounts").click()
         if width in (320, 768, 841):
             page.locator(".activity-link").first.click()
             expect(page.locator(".detail-close")).to_be_focused()
@@ -128,7 +121,7 @@ with sync_playwright() as playwright:
             UPDATE customers SET customer_revision=customer_revision+1 WHERE id='fixture-f09';
             COMMIT;
         """)
-        page.get_by_role("button", name="Refresh data").click()
+        page.reload(wait_until="networkidle")
         next_button = page.locator(".activity-pagination button").last
         expect(next_button).to_be_enabled()
         statuses = []
@@ -141,7 +134,7 @@ with sync_playwright() as playwright:
     large = browser.new_page(viewport={"width": 841, "height": 900})
     large.goto(base, wait_until="networkidle")
     large.get_by_label("Login ID").fill("fixture-large")
-    large.get_by_label("Password").fill("fixture-only-password")
+    large.get_by_label("Password", exact=True).fill("fixture-only-password")
     large.get_by_role("button", name="Sign in").click()
     navigate(large, "Transactions")
     for width in (320, 768, 840, 841, 1024, 1440):

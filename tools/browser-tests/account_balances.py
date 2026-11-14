@@ -16,7 +16,7 @@ def sign_in(browser, fixture):
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.goto(BASE, wait_until="networkidle")
     page.get_by_label("Login ID").fill(fixture)
-    page.get_by_label("Password").fill("fixture-only-password")
+    page.get_by_label("Password", exact=True).fill("fixture-only-password")
     page.get_by_role("button", name="Sign in").click()
     expect(page.locator(".account-control")).to_be_visible()
     return page, errors
@@ -65,14 +65,21 @@ with sync_playwright() as playwright:
     page, errors = sign_in(browser, "fixture-f01")
     options = page.locator(".account-option")
     expect(options).to_have_count(3)
-    expect(options.nth(0)).to_contain_text("R25,650.00")
-    expect(options.nth(1)).to_contain_text("R22,150.00")
-    expect(options.nth(2)).to_contain_text("R3,500.00")
+    expect(options.nth(0)).to_contain_text("R22,150.00")
+    expect(options.nth(1)).to_contain_text("R3,500.00")
+    expect(options.nth(2)).to_contain_text("R25,650.00")
     expect(page.locator(".accounts-overview")).to_contain_text("31 Oct 2026")
     assert page.locator(".accounts-overview select").count() == 0
     page.locator(".account-button").click()
+    page.get_by_role("radio", name="All accounts").check()
+    expect(page.locator(".account-button")).to_contain_text("R25,650.00")
+    page.locator(".trend-column").first.click()
+    expect(page.locator(".trend-column").first).to_have_attribute("aria-pressed", "true")
+    expect(page.locator(".trend-reading")).to_be_visible()
+    page.locator(".account-button").click()
     page.get_by_role("radio", name="Everyday").check()
-    expect(page.locator(".summary-card.primary .metric-value")).to_have_text("+R850.00")
+    expect(page.locator(".summary-card.primary .metric-value")).to_have_text("−R850.00")
+    expect(page.locator(".trend-reading")).to_have_count(0)
     assert page.locator('input[value="f01-everyday"]').is_checked()
     navigate(page, "Transactions")
     expect(page.locator(".selected-balance")).to_contain_text("R22,150.00")
@@ -83,14 +90,7 @@ with sync_playwright() as playwright:
     expect(page.locator(".selected-balance")).to_contain_text("R25,650.00")
     navigate(page, "Overview")
     assert page.locator('input[value=""]').is_checked()
-    page.get_by_role("button", name="Hide amounts").click()
-    assert "R25,650.00" not in page.locator("body").inner_text()
-    assert "R22,150.00" not in page.locator("body").inner_text()
-    assert "R3,500.00" not in page.locator("body").inner_text()
-    assert "R25,650.00" not in page.locator("body").aria_snapshot()
-    navigate(page, "Transactions")
-    assert "R25,650.00" not in page.locator("body").inner_text()
-    page.get_by_role("button", name="Show amounts").click()
+    expect(page.get_by_role("button", name="Hide amounts")).to_have_count(0)
 
     for width in WIDTHS:
         page.set_viewport_size({"width": width, "height": 900})
@@ -121,6 +121,15 @@ with sync_playwright() as playwright:
     navigate(page, "Overview")
     expect(page.locator(".account-button")).to_be_visible()
     check_text_resize(page)
+    page.reload(wait_until="networkidle")
+    page.locator(".profile-menu summary").click()
+    page.get_by_role("button", name="Sign out").click()
+    expect(page.get_by_label("Login ID")).to_be_visible()
+    page.get_by_label("Login ID").fill("fixture-f14")
+    page.get_by_label("Password", exact=True).fill("fixture-only-password")
+    page.get_by_role("button", name="Sign in").click()
+    expect(page.locator(".account-option-amount").first).to_have_text("R10,000.00")
+    assert "R25,650.00" not in page.locator("body").inner_text()
     page.close()
     assert not errors, errors
 
@@ -144,8 +153,8 @@ with sync_playwright() as playwright:
         if count:
             expect(customer.locator(".account-option")).to_have_count(count + 1)
             expect(customer.locator(".account-option").first).to_contain_text("−R50.00")
-            expect(customer.locator(".account-option").nth(1)).to_contain_text("−R50.00")
-            expect(customer.locator(".account-option").nth(2)).to_contain_text("R0.00")
+            expect(customer.locator(".account-option").nth(1)).to_contain_text("R0.00")
+            expect(customer.locator(".account-option").nth(2)).to_contain_text("−R50.00")
         else:
             expect(customer.locator(".accounts-empty")).to_contain_text("No open accounts")
             assert "R0.00" not in customer.locator(".accounts-overview").inner_text()
@@ -154,8 +163,8 @@ with sync_playwright() as playwright:
 
     failure, failure_errors = sign_in(browser, "fixture-f01")
     failure.route("**/api/v1/accounts", lambda route: route.abort())
-    failure.get_by_role("button", name="Refresh data").click()
-    expect(failure.get_by_text("Account balances could not be refreshed. Retry when ready.")).to_be_visible()
+    failure.reload(wait_until="networkidle")
+    expect(failure.get_by_text("Accounts could not be loaded.")).to_be_visible()
     assert failure.locator(".account-option-amount").count() == 0
     failure.close()
     assert not failure_errors, failure_errors

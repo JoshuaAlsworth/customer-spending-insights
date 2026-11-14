@@ -19,13 +19,11 @@ import {
 const client = useQueryClient();
 const session = ref<Session | null>(null);
 const booting = ref(true);
-const refreshing = ref(false);
 const reconciliationAttempted = ref(false);
 const reconciling = ref(false);
 const generation = ref(0);
-const privacyHidden = ref(false);
 const sessionLocked = ref(false);
-const hidden = computed(() => privacyHidden.value || sessionLocked.value);
+const hidden = computed(() => sessionLocked.value);
 const view = ref<"overview" | "transactions">(
   location.hash.startsWith("#transactions") ? "transactions" : "overview",
 );
@@ -65,7 +63,6 @@ function clearSensitiveState() {
   from.value = "";
   to.value = "";
   periodSet.value = false;
-  privacyHidden.value = false;
   sessionLocked.value = false;
   reconciliationAttempted.value = false;
   reconciling.value = false;
@@ -147,22 +144,9 @@ watch(
     () => accounts.isFetching.value,
     () => dashboard.isFetching.value,
     reconciling,
-    refreshing,
   ],
-  ([
-    mismatch,
-    accountsFetching,
-    dashboardFetching,
-    isReconciling,
-    isRefreshing,
-  ]) => {
-    if (
-      mismatch &&
-      !accountsFetching &&
-      !dashboardFetching &&
-      !isReconciling &&
-      !isRefreshing
-    )
+  ([mismatch, accountsFetching, dashboardFetching, isReconciling]) => {
+    if (mismatch && !accountsFetching && !dashboardFetching && !isReconciling)
       void reconcileActivity();
   },
 );
@@ -245,42 +229,14 @@ function signedIn(current: Session) {
   status.value = "";
   channel?.postMessage("session-changed");
 }
-function toggleAmounts() {
-  if (!sessionLocked.value) privacyHidden.value = !privacyHidden.value;
-}
-async function refresh() {
-  reconciliationAttempted.value = false;
-  if (refreshing.value) return;
-  status.value = "";
-  refreshing.value = true;
-  try {
-    const accountResult = await accounts.refetch();
-    if (accountResult.isError) {
-      status.value =
-        "Account balances could not be refreshed. Retry when ready.";
-      return;
-    }
-    const analysisResult = accountResult.data?.accounts.length
-      ? await dashboard.refetch()
-      : null;
-    await Promise.all([
-      client.invalidateQueries({ queryKey: ["transactions"] }),
-      client.invalidateQueries({ queryKey: ["recent-transactions"] }),
-      client.invalidateQueries({ queryKey: ["transaction-history-presence"] }),
-    ]);
-    if (analysisResult?.isError)
-      status.value = "Spending data could not be refreshed. Retry when ready.";
-  } finally {
-    refreshing.value = false;
-  }
-}
 watch([selectedAccount, from, to], () => {
   reconciliationAttempted.value = false;
 });
 async function reconcileActivity() {
   if (!session.value || sessionLocked.value || reconciling.value) return;
   if (reconciliationAttempted.value) {
-    status.value = "Updated activity is available. Refresh to align your view.";
+    status.value =
+      "Updated activity is available. Reload this page to align your view.";
     return;
   }
   reconciliationAttempted.value = true;
@@ -289,7 +245,7 @@ async function reconcileActivity() {
     const accountResult = await accounts.refetch();
     if (accountResult.isError) {
       status.value =
-        "Updated account balances are unavailable. Refresh to retry.";
+        "Updated account balances are unavailable. Reload this page to retry.";
       return;
     }
     if (accountResult.data?.accounts.length) await dashboard.refetch();
@@ -306,7 +262,7 @@ function activityAligned() {
   if (
     !snapshotMismatch.value &&
     status.value ===
-      "Updated activity is available. Refresh to align your view."
+      "Updated activity is available. Reload this page to align your view."
   )
     status.value = "";
 }
@@ -363,14 +319,11 @@ onUnmounted(() => {
 
 <template>
   <AppHeader
+    v-if="session || booting"
     :signed-in="!!session"
     :view="view"
-    :hidden="hidden"
     :session-locked="sessionLocked"
-    :display-name="session?.displayName ?? ''"
     @navigate="setView"
-    @toggle-hidden="toggleAmounts"
-    @refresh="refresh"
     @sign-out="signOut"
   />
   <main v-if="booting" class="signed-out">
@@ -421,7 +374,7 @@ onUnmounted(() => {
       <template v-else-if="accounts.data.value">
         <div class="global-filters">
           <p v-if="snapshotMismatch" class="state-panel" role="status">
-            Account balances and spending are updating. Refresh if this
+            Account balances and spending are updating. Reload if this
             continues.
           </p>
           <AccountBalances
@@ -436,6 +389,9 @@ onUnmounted(() => {
             :from="from"
             :to="to"
             :reference-date="accounts.data.value.dataset.referenceDate"
+            :label="
+              view === 'transactions' ? 'Transaction dates' : 'Spending period'
+            "
             @apply-period="setPeriod"
           />
         </div>
@@ -451,9 +407,6 @@ onUnmounted(() => {
           !snapshotMismatch
         "
       >
-        <p v-if="refreshing" class="state-panel" role="status">
-          Refreshing your spending…
-        </p>
         <p v-if="dashboard.isPending.value" class="state-panel" role="status">
           Loading your spending…
         </p>

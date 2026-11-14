@@ -16,13 +16,23 @@ def inside_dialog(page):
 
 with sync_playwright() as playwright:
     browser = playwright.chromium.launch(headless=True)
+    login = browser.new_page(viewport={"width": 1512, "height": 982})
+    login.goto(BASE, wait_until="networkidle")
+    expect(login.locator(".login-art")).to_be_visible()
+    expect(login.locator(".app-header")).to_have_count(0)
+    login.get_by_label("Password", exact=True).fill("fixture-only-password")
+    login.get_by_role("button", name="Show password").click()
+    expect(login.get_by_label("Password", exact=True)).to_have_attribute("type", "text")
+    login.get_by_role("button", name="Hide password").click()
+    expect(login.get_by_label("Password", exact=True)).to_have_attribute("type", "password")
+    login.close()
     for width in (320, 375, 767):
         page = browser.new_page(viewport={"width": width, "height": 812})
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto(BASE, wait_until="networkidle")
         page.get_by_label("Login ID").fill("fixture-f09")
-        page.get_by_label("Password").fill("fixture-only-password")
+        page.get_by_label("Password", exact=True).fill("fixture-only-password")
         page.get_by_role("button", name="Sign in").click()
         expect(page.locator(".account-button")).to_be_visible()
         opener = page.get_by_role("button", name="Open navigation")
@@ -70,7 +80,7 @@ with sync_playwright() as playwright:
     tablet = browser.new_page(viewport={"width": 768, "height": 900})
     tablet.goto(BASE, wait_until="networkidle")
     tablet.get_by_label("Login ID").fill("fixture-f09")
-    tablet.get_by_label("Password").fill("fixture-only-password")
+    tablet.get_by_label("Password", exact=True).fill("fixture-only-password")
     tablet.get_by_role("button", name="Sign in").click()
     expect(tablet.locator(".main-nav")).to_be_visible()
     expect(tablet.get_by_role("button", name="Open navigation")).to_be_hidden()

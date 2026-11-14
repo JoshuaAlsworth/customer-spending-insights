@@ -113,7 +113,7 @@ it("renders the server dashboard after session and account lookup", async () => 
   await flushPromises();
   await flushPromises();
   expect(wrapper.text()).toContain("R850.00");
-  expect(wrapper.text()).toContain("Sample Customer");
+  expect(wrapper.find(".profile-popover").text()).toContain("Sign out");
   expect(
     fetch.mock.calls.some((call) =>
       (call[0] as Request).url.includes("/api/v1/dashboard"),
@@ -240,7 +240,7 @@ it("applies a chart category again after reset without changing the spending sco
     expect(activityRequests.at(-1)?.searchParams.has("cursor")).toBe(false);
     await wrapper.get(".sidebar-nav button:first-child").trigger("click");
     expect(wrapper.get(".summary-card.primary .metric-value").text()).toBe(
-      "+R850.00",
+      "−R850.00",
     );
     await wrapper
       .get('button[aria-label="Filter transactions by Health"]')
@@ -322,10 +322,7 @@ it("keeps cached spending concealed after failed logout until a server session c
     await flushPromises();
     expect(wrapper.text()).toContain("Sign out could not be confirmed");
     expect(wrapper.text()).not.toContain("R850.00");
-    expect(
-      wrapper.get('[aria-label="Show amounts"]').attributes("disabled"),
-    ).toBeDefined();
-    await wrapper.get('[aria-label="Show amounts"]').trigger("click");
+    expect(wrapper.find('[aria-label="Show amounts"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("R850.00");
     await wrapper.get("button.button.secondary").trigger("click");
     await flushPromises();
