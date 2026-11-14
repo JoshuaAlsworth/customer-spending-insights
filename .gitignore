@@ -15,6 +15,7 @@ playwright-report/
 test-results/
 *.log
 /generated-data/
+/.local-certs/
 *.sql.gz
 AGENTS.md
 AGENTS.override.md

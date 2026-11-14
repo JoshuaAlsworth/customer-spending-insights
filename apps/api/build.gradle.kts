@@ -32,7 +32,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-session-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
-    implementation("org.bouncycastle:bcprov-jdk18on:1.83")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.85")
     runtimeOnly("org.postgresql:postgresql")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-test")

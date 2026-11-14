@@ -79,6 +79,10 @@ public class SecurityConfiguration {
                                         "/api/v1/auth/login",
                                         "/api/v1/auth/logout")
                                 .permitAll()
+                                .requestMatchers(request ->
+                                        request.getRequestURI().startsWith("/actuator/metrics")
+                                                && request.getRemoteAddr().equals("127.0.0.1"))
+                                .permitAll()
                                 .requestMatchers(
                                         "/api/v1/auth/session",
                                         "/api/v1/accounts",
@@ -121,6 +125,7 @@ public class SecurityConfiguration {
                                     .isAfter(
                                             Instant.ofEpochMilli(timestamp)
                                                     .plus(ABSOLUTE_LIFETIME))) {
+                        request.setAttribute("csi.securityEvent", "session_expired");
                         if (session != null) session.invalidate();
                         SecurityContextHolder.clearContext();
                         writeProblem(response, 401, "SESSION_EXPIRED");

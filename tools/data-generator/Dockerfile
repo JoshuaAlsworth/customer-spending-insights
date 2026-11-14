@@ -1,13 +1,14 @@
-FROM docker:29.2.1-cli@sha256:cab69e2d0a1a2ea9a1ce1060252f439e83483ae41ec09317aecb33b08a0656a5 AS docker-cli
+FROM docker:29.9.3-cli@sha256:5a7af0dcb0e46c803efe9b45371dd21cb500e5b4453250394ac6f06d49b6e6f1 AS docker-cli
 
-FROM python:3.14.6-slim-bookworm@sha256:4c92ffcde4dd6f1ff72a24518f49fd4990b27134987dfa31a733badde66df9f8 AS runtime
+FROM python:3.14.10-alpine3.24@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67 AS runtime
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 WORKDIR /tool
 COPY tools/data-generator/pyproject.toml tools/data-generator/uv.lock ./
-RUN pip install --no-cache-dir uv==0.11.28 \
+RUN pip install --no-cache-dir uv==0.13.4 \
     && uv export --locked --no-dev --no-emit-project --quiet -o /tmp/requirements.txt \
     && uv pip install --system -r /tmp/requirements.txt \
+    && python -m pip uninstall -y pip \
     && rm /tmp/requirements.txt
 ENTRYPOINT ["python", "-m", "csi_data"]
 
