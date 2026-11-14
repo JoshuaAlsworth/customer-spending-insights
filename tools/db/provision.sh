@@ -62,6 +62,7 @@ BEGIN
 END $$;
 SELECT 'CREATE ROLE customer_insights_api LOGIN NOINHERIT PASSWORD ' || quote_literal(:'api_password')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'customer_insights_api') \gexec
+ALTER ROLE customer_insights_api IN DATABASE customer_insights SET statement_timeout = '8s';
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE ALL ON SCHEMA public FROM customer_insights_api;
 REVOKE CREATE, TEMPORARY ON DATABASE customer_insights FROM PUBLIC;

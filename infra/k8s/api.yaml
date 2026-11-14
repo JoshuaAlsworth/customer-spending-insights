@@ -2,6 +2,11 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: customer-spending-insights
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.35
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.35
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -10,6 +15,10 @@ metadata:
   namespace: customer-spending-insights
 spec:
   replicas: 2
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
   selector:
     matchLabels: {app: csi-api}
   template:
@@ -17,12 +26,22 @@ spec:
       labels: {app: csi-api}
     spec:
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      nodeSelector: {csi.role: worker}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app: csi-api}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: api
-          image: customer-spending-insights-api:latest
+          image: csi-hardening-api:latest
           imagePullPolicy: Never
           ports:
             - {name: http, containerPort: 8080}
@@ -32,15 +51,19 @@ spec:
             - name: CURSOR_SECRET
               valueFrom:
                 secretKeyRef: {name: csi-api-cursor, key: CURSOR_SECRET}
+            - {name: COOKIE_SECURE, value: "false"}
+            - {name: SERVER_TOMCAT_ACCESSLOG_ENABLED, value: "true"}
+            - {name: SERVER_TOMCAT_ACCESSLOG_DIRECTORY, value: "/tmp"}
+            - {name: SERVER_TOMCAT_ACCESSLOG_PATTERN, value: "%s %b"}
           resources:
-            requests: {cpu: 100m, memory: 256Mi}
-            limits: {cpu: 750m, memory: 768Mi}
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {cpu: 1000m, memory: 768Mi}
           startupProbe:
             httpGet: {path: /actuator/health, port: http}
             periodSeconds: 5
             failureThreshold: 24
           readinessProbe:
-            httpGet: {path: /actuator/health, port: http}
+            httpGet: {path: /actuator/health/readiness, port: http}
             periodSeconds: 5
           livenessProbe:
             httpGet: {path: /actuator/health/liveness, port: http}
@@ -49,11 +72,49 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 10"]
           volumeMounts:
             - {name: temp, mountPath: /tmp}
       volumes:
         - name: temp
           emptyDir: {}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: csi-api
+  namespace: customer-spending-insights
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: csi-api}
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 60}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - {type: Pods, value: 2, periodSeconds: 60}
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - {type: Pods, value: 1, periodSeconds: 60}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: csi-api
+  namespace: customer-spending-insights
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: csi-api}
 ---
 apiVersion: v1
 kind: Service
@@ -90,9 +151,9 @@ metadata:
   namespace: customer-spending-insights
 spec:
   rateLimit:
-    average: 15
+    average: 360
     period: 1s
-    burst: 30
+    burst: 360
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

@@ -9,4 +9,5 @@
 .env.*
 !.env.example
 generated-data
+.local-certs
 capitec-private
