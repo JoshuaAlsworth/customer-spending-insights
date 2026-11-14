@@ -581,18 +581,26 @@ def generate(
                             group=group,
                         )
             if profile == "demo" or activity_rng.random() < 0.05:
-                for state in ("PENDING", "CANCELLED"):
+                states = (
+                    ("PENDING", "CANCELLED", "PENDING", "PENDING", "CANCELLED")
+                    if profile == "demo"
+                    else ("PENDING", "CANCELLED")
+                )
+                for position, state in enumerate(states):
                     auth_id = f"au_{index:05d}_{counts['authorizations.csv'] + 1:07d}"
+                    merchant_id, merchant_name, *_ = MERCHANTS[
+                        (index + position) % len(MERCHANTS)
+                    ]
                     row(
                         writers["authorizations.csv"],
                         (
                             auth_id,
                             accounts[0],
-                            activity_rng.randint(1000, 300000),
-                            stamp(REFERENCE, 10),
+                            activity_rng.randint(1000, 90000),
+                            stamp(REFERENCE - timedelta(days=position), 10),
                             state,
-                            MERCHANTS[0][0],
-                            "Synthetic card authorization",
+                            merchant_id,
+                            f"{merchant_name} card authorization",
                             f"gen:auth:{auth_id}",
                         ),
                     )

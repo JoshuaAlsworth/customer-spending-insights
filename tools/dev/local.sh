@@ -88,13 +88,35 @@ validate_config() {
 check_port() {
   current=$(compose port web "$web_container_port" 2>/dev/null || true)
   [ "$current" = "127.0.0.1:$port" ] && return
+  if port_available; then return; fi
+  occupant=$(docker ps --filter "publish=$port" --format '{{.Names}}' | head -n 1)
+  [ -z "$occupant" ] || fail "Host port $port is used by Docker container $occupant. Set $port_name to an available port."
+  fail "Host port $port is unavailable. Set $port_name to an available port."
+}
+
+port_available() {
   docker run --rm -p "127.0.0.1:$port:8080" --entrypoint true \
     postgres:17.7-alpine@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2 \
-    >/dev/null 2>&1 || {
-      occupant=$(docker ps --filter "publish=$port" --format '{{.Names}}' | head -n 1)
-      [ -z "$occupant" ] || fail "Host port $port is used by Docker container $occupant. Set $port_name to an available port."
-      fail "Host port $port is unavailable. Set $port_name to an available port."
-    }
+    >/dev/null 2>&1
+}
+
+choose_port() {
+  if [ "$mode" != up ] || [ "${CSI_WEB_PORT+x}" = x ]; then
+    check_port
+    return
+  fi
+  current=$(compose port web "$web_container_port" 2>/dev/null || true)
+  case "$current" in
+    127.0.0.1:*) port=${current##*:}; export CSI_WEB_PORT=$port; return ;;
+  esac
+  while [ "$port" -le 8098 ]; do
+    if port_available; then
+      export CSI_WEB_PORT=$port
+      return
+    fi
+    port=$((port + 1))
+  done
+  fail 'No free loopback web port from 8088 to 8098. Set CSI_WEB_PORT explicitly.'
 }
 
 create_certificate() {
@@ -168,7 +190,7 @@ validate_login() {
 
 up() {
   check_docker
-  check_port
+  choose_port
   create_config
   validate_config
   [ "$mode" != secure:up ] || create_certificate
@@ -208,7 +230,7 @@ up() {
   fi
   if [ -f "$login_file" ]; then
     validate_login
-    echo 'Demo login: synthetic-00004; run ./dev credentials for the local password.'
+    echo 'Demo login: synthetic-00007; run ./dev credentials for the local password.'
   else
     echo 'Existing dataset: use its original synthetic login credentials.'
   fi
@@ -222,7 +244,7 @@ case "${1:-}" in
   credentials)
     [ -f "$login_file" ] || fail 'No local demo login file. Existing datasets retain their original credentials.'
     validate_login
-    echo 'Login ID: synthetic-00004'
+    echo 'Login ID: synthetic-00007'
     sed 's/^CSI_CUSTOMER_PASSWORD=/Password: /' "$login_file"
     ;;
   demo)

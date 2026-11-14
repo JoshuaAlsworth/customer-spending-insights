@@ -45,13 +45,57 @@ const global = {
 };
 const previewProps = { customerId: "c1", accountIds: ["a1"], generation: 0 };
 
+it("keeps ten signed categories available through the desktop disclosure", async () => {
+  const names = [
+    "Housing & utilities",
+    "Groceries",
+    "Transport & fuel",
+    "Money sent",
+    "Cash withdrawals",
+    "Other",
+    "Bank fees",
+    "Health",
+    "Shopping",
+    "Education",
+  ];
+  const expanded = {
+    ...dashboard,
+    categories: names.map((displayName, index) => ({
+      categoryCode:
+        `CATEGORY_${index}` as Dashboard["categories"][number]["categoryCode"],
+      displayName,
+      netSpendingMinor: index === 7 ? "-12000" : String((9 - index) * 10000),
+    })),
+  };
+  const wrapper = mount(OverviewView, {
+    props: { dashboard: expanded, hidden: false, ...previewProps },
+    global,
+  });
+  expect(wrapper.findAll(".category-row")).toHaveLength(10);
+  const toggle = wrapper.get(".category-toggle");
+  expect(toggle.classes()).toContain("desktop-needed");
+  expect(toggle.attributes("aria-expanded")).toBe("false");
+  expect(toggle.attributes("aria-controls")).toBe("overview-categories");
+  await toggle.trigger("click");
+  expect(toggle.attributes("aria-expanded")).toBe("true");
+  expect(wrapper.text()).toContain("−R120.00");
+  await wrapper.setProps({
+    dashboard: {
+      ...expanded,
+      scope: { ...expanded.scope, from: "2026-09-01" },
+    },
+  });
+  expect(toggle.attributes("aria-expanded")).toBe("false");
+  wrapper.unmount();
+});
+
 it("shows exact authoritative amounts and hides every accessible amount", () => {
   const wrapper = mount(OverviewView, {
     props: { dashboard, hidden: false, ...previewProps },
     global,
   });
   expect(wrapper.get(".summary-card.primary .metric-value").text()).toBe(
-    "+R850.00",
+    "−R850.00",
   );
   expect(wrapper.text()).toContain("+R17,150.00");
   expect(wrapper.text()).toContain("−R200.00");
@@ -64,8 +108,8 @@ it("shows exact authoritative amounts and hides every accessible amount", () => 
 });
 
 it.each([
-  ["85000", "+R850.00", false],
-  ["-15000", "−R150.00", true],
+  ["85000", "−R850.00", false],
+  ["-15000", "+R150.00", true],
   ["0", "R0.00", false],
 ] as const)(
   "renders the signed Money out value %s",
@@ -108,7 +152,27 @@ it("uses one visual scale for equal positive and negative trend buckets", () => 
   expect(
     wrapper.findAll(".trend-bar").map((bar) => bar.attributes("style")),
   ).toEqual(["height: 45%;", "height: 45%;", "height: 0%;"]);
-  expect(wrapper.text()).toContain("−R100.00");
+  expect(
+    wrapper.findAll(".trend-column")[1].attributes("aria-label"),
+  ).toContain("−R100.00");
+  wrapper.unmount();
+});
+
+it("shows the selected trend bucket and clears it when the period changes", async () => {
+  const wrapper = mount(OverviewView, {
+    props: { dashboard, hidden: false, ...previewProps },
+    global,
+  });
+  await wrapper.get(".trend-column").trigger("click");
+  expect(wrapper.get(".trend-column").attributes("aria-pressed")).toBe("true");
+  expect(wrapper.get(".trend-reading").text()).toContain("R850.00");
+  await wrapper.setProps({
+    dashboard: {
+      ...dashboard,
+      scope: { ...dashboard.scope, from: "2026-09-01" },
+    },
+  });
+  expect(wrapper.find(".trend-reading").exists()).toBe(false);
   wrapper.unmount();
 });
 

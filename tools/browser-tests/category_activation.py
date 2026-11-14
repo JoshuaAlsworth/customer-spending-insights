@@ -23,10 +23,10 @@ with sync_playwright() as playwright:
     )
     page.goto(BASE, wait_until="networkidle")
     page.get_by_label("Login ID").fill("fixture-f09")
-    page.get_by_label("Password").fill("fixture-only-password")
+    page.get_by_label("Password", exact=True).fill("fixture-only-password")
     page.get_by_role("button", name="Sign in").click()
     summary = page.locator(".summary-card.primary .metric-value")
-    expect(summary).to_have_text("+R12,480.50")
+    expect(summary).to_have_text("−R12,480.50")
     account = page.locator(".account-button").inner_text()
     period = page.locator(".period-control .select-button").inner_text()
 
@@ -43,7 +43,7 @@ with sync_playwright() as playwright:
     page.get_by_role("button", name="Reset filters").click()
     expect(page.get_by_label("Category")).to_have_value("")
     page.locator(".sidebar-nav").get_by_role("button", name="Overview").click()
-    expect(summary).to_have_text("+R12,480.50")
+    expect(summary).to_have_text("−R12,480.50")
     select_chart("Groceries", "GROCERIES")
     page.locator(".sidebar-nav").get_by_role("button", name="Overview").click()
     select_chart("Health", "HEALTH")
@@ -58,7 +58,7 @@ with sync_playwright() as playwright:
     assert page.locator(".account-button").inner_text() == account
     assert page.locator(".period-control .select-button").inner_text() == period
     page.locator(".sidebar-nav").get_by_role("button", name="Overview").click()
-    expect(summary).to_have_text("+R12,480.50")
+    expect(summary).to_have_text("−R12,480.50")
     assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
     assert not errors, errors
     browser.close()

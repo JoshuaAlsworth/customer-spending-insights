@@ -79,10 +79,10 @@ def selected_account(dataset: Path) -> tuple[str, str]:
         customers = [
             row
             for row in csv.DictReader(handle)
-            if row["login_id"] == "synthetic-00004"
+            if row["login_id"] == "synthetic-00007"
         ]
     if len(customers) != 1 or customers[0]["status"] != "ACTIVE":
-        raise ValueError("Expected one active synthetic-00004 customer")
+        raise ValueError("Expected one active synthetic-00007 customer")
     customer_id = customers[0]["customer_id"]
     with (dataset / "accounts.csv").open(newline="", encoding="utf-8") as handle:
         accounts = [
@@ -94,7 +94,7 @@ def selected_account(dataset: Path) -> tuple[str, str]:
             and row["opened_on"] <= "2026-10-30"
         ]
     if len(accounts) != 1:
-        raise ValueError("Expected one eligible everyday account for synthetic-00004")
+        raise ValueError("Expected one eligible everyday account for synthetic-00007")
     with (dataset / "merchants.csv").open(newline="", encoding="utf-8") as handle:
         merchants = {row["merchant_id"] for row in csv.DictReader(handle)}
     if not {"cedar-market", "harbor-cafe"} <= merchants:
@@ -306,7 +306,7 @@ def main() -> None:
         parser.error("The selected project has no approved demo dataset")
     customer_id, account = selected_account(dataset)
     verify_snapshot(
-        database_snapshot(project, "synthetic-00004", account, args.run_id),
+        database_snapshot(project, "synthetic-00007", account, args.run_id),
         manifest,
         customer_id,
         account,
@@ -395,7 +395,7 @@ def main() -> None:
         json.dumps(
             {
                 "project": project,
-                "customer": "synthetic-00004",
+                "customer": "synthetic-00007",
                 "account": account,
                 "logical_date": "2026-10-30 Africa/Johannesburg",
                 "posted_before_minor": before,

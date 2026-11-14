@@ -52,6 +52,37 @@ def test_busy_port_names_owning_container_before_start(tmp_path) -> None:
     assert not (tmp_path / ".env").exists()
 
 
+def test_default_port_falls_back_without_touching_occupant(tmp_path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker = fake_bin / "docker"
+    docker.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        '  "compose up --help") echo --wait;;\n'
+        '  "compose run --help") echo --no-deps;;\n'
+        '  *"127.0.0.1:8088:8080"*) exit 1;;\n'
+        '  "compose up -d --wait db") exit 1;;\n'
+        "esac\n"
+    )
+    docker.chmod(0o755)
+    result = subprocess.run(
+        ["sh", str(ROOT / "tools/dev/local.sh"), "up"],
+        cwd=tmp_path,
+        env={
+            **{
+                key: value for key, value in os.environ.items() if key != "CSI_WEB_PORT"
+            },
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "CSI_COMPOSE_PROJECT": "csi-port-test",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert "Starting Compose project csi-port-test on 127.0.0.1:8089" in result.stdout
+    assert result.returncode != 0
+
+
 def test_invalid_project_rejected_before_docker() -> None:
     result = subprocess.run(
         ["sh", str(ROOT / "tools/dev/local.sh"), "down"],
@@ -132,7 +163,7 @@ def test_demo_resolves_login_owner_from_validated_rows(tmp_path) -> None:
         writer.writerow(
             {
                 "customer_id": "unexpected-id",
-                "login_id": "synthetic-00004",
+                "login_id": "synthetic-00007",
                 "status": "ACTIVE",
             }
         )

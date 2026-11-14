@@ -5,6 +5,7 @@ const props = defineProps<{
   from: string;
   to: string;
   referenceDate: string;
+  label?: string;
 }>();
 const emit = defineEmits<{
   "apply-period": [period: { from: string; to: string }];
@@ -30,6 +31,19 @@ const monthYear = (date: string) =>
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${date}T12:00:00Z`));
+const fullMonthYear = (date: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T12:00:00Z`));
+const currentMonthLabel = computed(() => fullMonthYear(props.referenceDate));
+const previousMonthLabel = computed(() => {
+  const date = new Date(`${props.referenceDate}T12:00:00Z`);
+  return fullMonthYear(
+    calendarDate(date.getUTCFullYear(), date.getUTCMonth() - 1, 1),
+  );
+});
 const periodLabel = computed(() => {
   if (!props.from || !props.to) return "Choose dates";
   return props.from.slice(0, 7) === props.to.slice(0, 7)
@@ -102,7 +116,7 @@ function applyPeriod() {
 
 <template>
   <section class="period-control">
-    <span class="field-label">Spending period</span>
+    <span class="field-label">{{ label ?? "Spending period" }}</span>
     <details
       ref="picker"
       class="period-picker"
@@ -110,7 +124,7 @@ function applyPeriod() {
     >
       <summary
         class="select-button"
-        :aria-label="`Spending period: ${periodLabel}`"
+        :aria-label="`${label ?? 'Spending period'}: ${periodLabel}`"
       >
         <span class="period-long">{{ periodLabel }}</span><span
           class="period-short"
@@ -118,8 +132,12 @@ function applyPeriod() {
         >
       </summary>
       <div class="period-popover">
-        <button type="button" @click="chooseMonth(0)">Current month</button>
-        <button type="button" @click="chooseMonth(-1)">Previous month</button>
+        <button type="button" @click="chooseMonth(0)">
+          {{ currentMonthLabel }}
+        </button>
+        <button type="button" @click="chooseMonth(-1)">
+          {{ previousMonthLabel }}
+        </button>
         <button type="button" @click="chooseLast90">Last 90 days</button>
         <button
           type="button"
