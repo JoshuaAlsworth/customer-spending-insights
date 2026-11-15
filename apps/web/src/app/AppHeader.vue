@@ -1,25 +1,66 @@
 <script setup lang="ts">
-import { nextTick, onUnmounted, ref, watch } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const props = defineProps<{
   signedIn: boolean;
   view: "overview" | "transactions";
   sessionLocked: boolean;
-  refreshing: boolean;
+  searchOpen: boolean;
 }>();
 const emit = defineEmits<{
   navigate: [view: "overview" | "transactions"];
-  refresh: [];
+  search: [];
   "sign-out": [];
 }>();
 const menuOpen = ref(false);
+const menuClosing = ref(false);
+const profileMenu = ref<HTMLDetailsElement | null>(null);
 const menuButton = ref<HTMLButtonElement | null>(null);
 const menu = ref<HTMLDialogElement | null>(null);
 function closeMenu() {
-  menu.value?.close();
+  const dialog = menu.value;
+  if (!dialog?.open || menuClosing.value) return;
+  if (
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ||
+    !dialog.animate
+  ) {
+    dialog.close();
+    return;
+  }
+  menuClosing.value = true;
+  const style = getComputedStyle(dialog);
+  const animation = dialog.animate(
+    [
+      { opacity: style.opacity, transform: style.transform },
+      { opacity: 0, transform: "translateY(100%)" },
+    ],
+    { duration: 300, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+  );
+  void animation.finished.then(
+    () => dialog.close(),
+    () => dialog.close(),
+  );
 }
+function closeProfileOutside(event: PointerEvent) {
+  if (
+    profileMenu.value?.open &&
+    !profileMenu.value.contains(event.target as Node)
+  )
+    profileMenu.value.open = false;
+}
+function closeProfileOnEscape(event: KeyboardEvent) {
+  if (event.key === "Escape" && profileMenu.value?.open) {
+    profileMenu.value.open = false;
+    profileMenu.value.querySelector("summary")?.focus();
+  }
+}
+onMounted(() => {
+  document.addEventListener("pointerdown", closeProfileOutside);
+  document.addEventListener("keydown", closeProfileOnEscape);
+});
 function onMenuClosed() {
   menuOpen.value = false;
+  menuClosing.value = false;
   nextTick(() => menuButton.value?.focus());
 }
 function onMenuKey(event: KeyboardEvent) {
@@ -55,13 +96,18 @@ watch(menuOpen, async (open) => {
 });
 onUnmounted(() => {
   document.body.style.overflow = "";
+  document.removeEventListener("pointerdown", closeProfileOutside);
+  document.removeEventListener("keydown", closeProfileOnEscape);
 });
 </script>
 
 <template>
   <a v-if="signedIn" class="skip-link" href="#dashboard">Skip to content</a>
   <aside v-if="signedIn" class="app-sidebar" aria-label="Application sidebar">
-    <div class="sidebar-identity">Spending Insights</div>
+    <div class="sidebar-identity">
+      <img class="brand-logo" src="/spending-insights-logo.svg" alt="" />
+      Spending Insights
+    </div>
     <nav class="sidebar-nav" aria-label="Primary navigation">
       <button
         type="button"
@@ -82,7 +128,10 @@ onUnmounted(() => {
   <header class="app-header" :class="{ 'signed-out-header': !signedIn }">
     <div class="header-left">
       <div class="identity">
-        <span class="identity-brand">Spending Insights</span>
+        <span class="identity-brand">
+          <img class="brand-logo" src="/spending-insights-logo.svg" alt="" />
+          Spending Insights
+        </span>
         <span v-if="signedIn" class="identity-page">{{
           view === "overview" ? "Your spending" : "Transactions"
         }}</span>
@@ -108,19 +157,27 @@ onUnmounted(() => {
     </div>
     <div v-if="signedIn" class="head-right">
       <button
+        v-if="view === 'transactions'"
         type="button"
-        class="head-btn refresh-button"
-        :aria-label="refreshing ? 'Refreshing data' : 'Refresh data'"
-        :aria-busy="refreshing"
-        :disabled="sessionLocked || refreshing"
-        @click="emit('refresh')"
+        class="mobile-header-search"
+        aria-label="Search transactions"
+        aria-controls="transaction-tools"
+        :aria-expanded="searchOpen"
+        :disabled="sessionLocked"
+        @click="emit('search')"
       >
-        <span class="head-icon" aria-hidden="true">↻</span>
-        <span class="head-label">{{
-          refreshing ? "Refreshing…" : "Refresh"
-        }}</span>
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <path d="m16 16 5 5" />
+        </svg>
       </button>
-      <details class="profile-menu">
+      <details ref="profileMenu" class="profile-menu">
         <summary aria-label="Account menu">
           <svg
             aria-hidden="true"
@@ -152,9 +209,15 @@ onUnmounted(() => {
       class="mobile-menu"
       aria-label="Navigate"
       @keydown="onMenuKey"
+      @click.self="closeMenu"
+      @cancel.prevent="closeMenu"
       @close="onMenuClosed"
     >
       <div class="mobile-menu-inner">
+        <div class="mobile-menu-brand">
+          <img class="brand-logo" src="/spending-insights-logo.svg" alt="" />
+          <span>Spending Insights</span>
+        </div>
         <h2>Navigate</h2>
         <nav class="mobile-menu-grid" aria-label="Mobile navigation">
           <button
@@ -162,7 +225,17 @@ onUnmounted(() => {
             :aria-current="view === 'overview' ? 'page' : undefined"
             @click="navigate('overview')"
           >
-            <span class="menu-chart" aria-hidden="true">▂▅█</span
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 40 40"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.4"
+            >
+              <rect x="4" y="4" width="13" height="13" rx="2" />
+              <rect x="23" y="4" width="13" height="13" rx="2" />
+              <rect x="4" y="23" width="13" height="13" rx="2" />
+              <rect x="23" y="23" width="13" height="13" rx="2" /></svg
             ><span>Overview</span>
           </button>
           <button
@@ -170,7 +243,26 @@ onUnmounted(() => {
             :aria-current="view === 'transactions' ? 'page' : undefined"
             @click="navigate('transactions')"
           >
-            <span class="menu-chart" aria-hidden="true">☷</span
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 40 40"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="5" y="3" width="30" height="34" rx="3" />
+              <path d="M16 13h13M16 20h13M16 27h13" />
+              <circle cx="11" cy="13" r="1" fill="currentColor" stroke="none" />
+              <circle cx="11" cy="20" r="1" fill="currentColor" stroke="none" />
+              <circle
+                cx="11"
+                cy="27"
+                r="1"
+                fill="currentColor"
+                stroke="none"
+              /></svg
             ><span>Transactions</span>
           </button>
         </nav>

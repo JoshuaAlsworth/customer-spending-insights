@@ -119,7 +119,7 @@ it("keeps fixed-date balances while account and period selection scope both rout
     const accountRequests = requests.filter((path) =>
       path.endsWith("/accounts"),
     ).length;
-    await wrapper.get(".period-popover button:last-of-type").trigger("click");
+    await wrapper.get(".period-popover > button:last-of-type").trigger("click");
     await wrapper.get("#from").setValue("2026-09-01");
     await wrapper.get("#to").setValue("2026-09-30");
     await wrapper.get(".custom-range").trigger("submit");

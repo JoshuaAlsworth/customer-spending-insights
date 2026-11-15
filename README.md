@@ -1,6 +1,6 @@
 # Customer Spending Insights
 
-A synthetic ZAR dashboard for customer sign-in, exact posted balances, spending summaries and transaction history. Overview shows current-period totals and recent posted entries. Transactions adds account, status, type, category and search filters, transaction detail, and pending authorisations. All money is stored and returned in integer cents.
+A synthetic ZAR dashboard for customer sign-in, exact posted balances, spending summaries and transaction history. Overview shows current-period totals and recent posted entries. Transactions adds account, status, category and search filters, transaction detail, and pending authorisations. All money is stored and returned in integer cents.
 
 ## Quick start
 
@@ -22,7 +22,7 @@ An existing dataset and its instance epoch, seed hash, customer revisions, simul
 
 Run `./dev credentials` to display the project-local synthetic password. Sign in as `synthetic-00007`. The generated password is separate from the database and simulator passwords and is stored in an ignored, mode-600 `.env.demo.<project>` file. Existing databases without that file retain their original synthetic login; startup does not reset it. The first-run `.env` contains independently generated infrastructure secrets and is also ignored and mode 600. Startup rejects an API password that no longer matches an existing database role instead of rotating it. Keep both files private.
 
-On Overview, inspect posted spending, movement, account balances and the latest entries. Use the account control to change scope. Open Transactions to inspect posted and pending items, filter and search, and open a detail view. Refresh data after an operator simulation. Customer 1 has no accounts, customer 2 has an empty account and customer 3 has pending-only activity, customer 4 is dormant, customer 5 opened recently, and customers 19 and 20 are high activity.
+On Overview, inspect posted spending, movement, account balances and the latest entries. Use the account control to change scope. Open Transactions to inspect posted and pending items, filter and search, and open a detail view. Reload the page after an operator simulation to fetch updated financial data; the dashboard does not poll or offer a general Refresh control. Customer 1 has no accounts, customer 2 has an empty account and customer 3 has pending-only activity, customer 4 is dormant, customer 5 opened recently, and customers 19 and 20 are high activity.
 
 ## Demonstrate pending, posting and cancellation
 
@@ -32,7 +32,7 @@ This intentionally mutates the selected synthetic demo database. Choose a unique
 ./dev demo review1 --approve
 ```
 
-The command validates the project-scoped demo manifest, resolves `synthetic-00007` to its eligible everyday account, checks that ownership, dataset identity and merchants match the database, then binds the restricted simulator identity to the current dataset instance epoch. It uses logical date 2026-10-30 in Africa/Johannesburg. It creates a R100.00 pending Cedar Market purchase, posts it for R85.00, creates a separate R40.00 pending Harbor Café purchase and cancels that one. It reports account posted totals before and after each operation, then retries the posting event and verifies `replayed: true`. Pending and cancellation do not change posted totals. Refresh the dashboard after the command to see the posted change. Repeating a corrected run ID replays its events; a run ID previously used against a different customer is rejected, so choose a new run ID.
+The command validates the project-scoped demo manifest, resolves `synthetic-00007` to its eligible everyday account, checks that ownership, dataset identity and merchants match the database, then binds the restricted simulator identity to the current dataset instance epoch. It uses logical date 2026-10-30 in Africa/Johannesburg. It creates a R100.00 pending Cedar Market purchase, posts it for R85.00, creates a separate R40.00 pending Harbor Café purchase and cancels that one. It reports account posted totals before and after each operation, then retries the posting event and verifies `replayed: true`. Pending and cancellation do not change posted totals. Reload the dashboard page after the command to see the posted change. Repeating a corrected run ID replays its events; a run ID previously used against a different customer is rejected, so choose a new run ID.
 
 The simulator runs through one-off local containers with its own restricted PostgreSQL role. It is not a customer API action. For individual operator actions, `./dev simulate:provision <project> <project> --dataset <directory>` and `./dev simulate <project> <project> pending|post|cancel ...` remain available; run `./dev help` and see the CLI's `--help`. The duplicate project name is explicit target approval. The simulator password is an independent secret in `.env`. Direct API and simulator provisioning reject a configured password that differs from an existing role; neither command rotates that role's password.
 

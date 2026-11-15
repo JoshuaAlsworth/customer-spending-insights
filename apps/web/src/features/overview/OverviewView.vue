@@ -7,6 +7,8 @@ import { money } from "../../utils/money";
 
 const props = defineProps<{
   dashboard: Dashboard;
+  balanceMinor?: string | null;
+  balanceAsOf?: string;
   hidden: boolean;
   customerId: string;
   accountIds: string[];
@@ -73,6 +75,11 @@ const recentMismatch = computed(
 );
 const shown = (value: string, signed = false) =>
   props.hidden ? "••••" : money(value, signed);
+const noSpendingActivity = computed(
+  () =>
+    BigInt(props.dashboard.summary.grossSpendingMinor) === 0n &&
+    BigInt(props.dashboard.summary.spendingCreditsMinor) === 0n,
+);
 const categoriesExpanded = ref(false);
 watch(
   () => [
@@ -166,15 +173,24 @@ const maxNegativeCategory = computed(() =>
 );
 const barStyle = (value: string) => {
   const amount = BigInt(value);
+  const magnitude = amount < 0n ? -amount : amount;
+  const mobileScale =
+    maxCategory.value > maxNegativeCategory.value
+      ? maxCategory.value
+      : maxNegativeCategory.value;
+  const mobileWidth =
+    mobileScale === 0n ? "0%" : `${Number((magnitude * 100n) / mobileScale)}%`;
   const scale =
     maxCategory.value * 18n > maxNegativeCategory.value * 80n
       ? maxCategory.value * 18n
       : maxNegativeCategory.value * 80n;
-  if (amount === 0n || scale === 0n) return { left: "20%", width: "0%" };
+  if (amount === 0n || scale === 0n)
+    return { left: "20%", width: "0%", "--mobile-width": mobileWidth };
   const width = Number(((amount < 0n ? -amount : amount) * 1440n) / scale);
   return {
     left: `${amount < 0n ? 20 - width : 20}%`,
     width: `${width}%`,
+    "--mobile-width": mobileWidth,
   };
 };
 const maxTrendMagnitude = computed(() =>
@@ -249,13 +265,51 @@ const trendHeight = (value: string) => {
         </div>
       </article>
     </section>
-    <section class="analysis" aria-label="Spending analysis">
+    <p v-if="balanceAsOf" class="mobile-balance-context">
+      Balance
+      {{
+        hidden
+          ? "••••"
+          : balanceMinor == null
+            ? "Unavailable"
+            : money(balanceMinor)
+      }}
+      · posted {{ recentDate(balanceAsOf) }}
+    </p>
+    <section
+      v-if="noSpendingActivity"
+      class="analysis analysis-empty"
+      aria-label="Spending analysis"
+    >
+      <div class="panel" role="status">
+        <h2>No spending activity</h2>
+        <p>
+          No posted spending or refunds in this period.
+          {{
+            accountIds.length
+              ? "Try another account or period."
+              : "Try another period."
+          }}
+        </p>
+      </div>
+    </section>
+    <section v-else class="analysis" aria-label="Spending analysis">
       <article
-        class="panel"
+        class="panel category-panel"
         :class="{ 'categories-collapsed': !categoriesExpanded }"
       >
         <div class="section-head">
           <h2>Where money went</h2>
+          <button
+            v-if="dashboard.categories.length > 4"
+            type="button"
+            class="category-toggle mobile-only"
+            :aria-expanded="categoriesExpanded"
+            aria-controls="overview-categories"
+            @click="categoriesExpanded = !categoriesExpanded"
+          >
+            {{ categoriesExpanded ? "View less" : "View all" }}
+          </button>
         </div>
         <p v-if="hidden" class="masked-visual">Amounts hidden</p>
         <p v-else-if="!dashboard.categories.length" class="compact-empty">
@@ -308,7 +362,7 @@ const trendHeight = (value: string) => {
           </p>
         </template>
       </article>
-      <article class="panel">
+      <article class="panel trend-panel">
         <div class="section-head">
           <h2>Spending over time</h2>
           <span class="section-meta">{{
@@ -339,6 +393,7 @@ const trendHeight = (value: string) => {
                 v-for="bucket in dashboard.trend"
                 :key="bucket.from"
                 class="trend-column"
+                :class="{ peak: trendPeak?.from === bucket.from }"
                 type="button"
                 :aria-label="`${trendLabel(bucket.from, bucket.to)}, ${money(bucket.netSpendingMinor)}`"
                 :aria-pressed="selectedTrendFrom === bucket.from"
@@ -368,7 +423,9 @@ const trendHeight = (value: string) => {
             </p>
           </div>
           <div v-if="trendPeak" class="trend-peak">
-            <span>Highest spending period</span
+            <span
+              >Highest spending
+              {{ dashboard.trend.length < 3 ? "period" : "week" }}</span
             ><strong
               >{{ trendLabel(trendPeak.from, trendPeak.to) }} ·
               {{ money(trendPeak.netSpendingMinor) }}</strong
@@ -391,7 +448,7 @@ const trendHeight = (value: string) => {
         {{
           reconciling
             ? "Checking for updated activity…"
-            : "Updated activity is available. Use Refresh to align your view."
+            : "Updated activity is available. Reload the page to align your view."
         }}
       </p>
       <p v-else-if="recent.isPending.value" class="recent-empty" role="status">
@@ -414,10 +471,15 @@ const trendHeight = (value: string) => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in recent.data.value.items" :key="item.id">
+          <tr
+            v-for="item in recent.data.value.items"
+            :key="item.id"
+            class="transaction-row"
+            @click="emit('open', item.id)"
+          >
             <td>{{ recentDate(item.postedAt!) }}</td>
             <td>
-              <button type="button" @click="emit('open', item.id)">
+              <button type="button" @click.stop="emit('open', item.id)">
                 {{ item.merchantName || item.description }}
               </button>
             </td>

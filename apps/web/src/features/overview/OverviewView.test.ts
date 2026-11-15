@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { expect, it, vi } from "vitest";
 import { QueryClient, VueQueryPlugin } from "@tanstack/vue-query";
 import OverviewView from "./OverviewView.vue";
@@ -30,7 +30,8 @@ const dashboard: Dashboard = {
   },
 };
 
-vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+const offlineFetch = vi.fn().mockRejectedValue(new Error("offline"));
+vi.stubGlobal("fetch", offlineFetch);
 const global = {
   plugins: [
     [
@@ -44,6 +45,102 @@ const global = {
   ],
 };
 const previewProps = { customerId: "c1", accountIds: ["a1"], generation: 0 };
+
+it("opens recent transaction details from the full row without duplicate clicks", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: "pe_recent",
+              recordKind: "POSTED_ENTRY",
+              merchantName: "Cedar Market",
+              description: "Cedar Market groceries",
+              type: "CARD_PURCHASE",
+              categoryCode: "GROCERIES",
+              amountMinor: "-24000",
+              postedAt: "2026-10-01T10:00:00Z",
+            },
+          ],
+          nextCursor: null,
+          dataset: dashboard.dataset,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    ),
+  );
+  const wrapper = mount(OverviewView, {
+    props: {
+      dashboard,
+      hidden: false,
+      ...previewProps,
+      customerId: "recent-row-test",
+    },
+    global,
+  });
+  try {
+    await flushPromises();
+    const row = wrapper.get(".recent-table .transaction-row");
+    await row.get(".amount").trigger("click");
+    expect(wrapper.emitted("open")?.[0]).toEqual(["pe_recent"]);
+    await row.get("button").trigger("click");
+    expect(wrapper.emitted("open")).toHaveLength(2);
+  } finally {
+    wrapper.unmount();
+    vi.stubGlobal("fetch", offlineFetch);
+  }
+});
+
+it("uses one compact state for an account without posted spending", async () => {
+  const empty = {
+    ...dashboard,
+    summary: {
+      ...dashboard.summary,
+      incomeMinor: "2000000",
+      grossSpendingMinor: "0",
+      spendingCreditsMinor: "0",
+      netSpendingMinor: "0",
+      netMovementMinor: "1800000",
+    },
+    categories: [],
+    trend: [{ from: "2026-10-01", to: "2026-10-07", netSpendingMinor: "0" }],
+  };
+  const wrapper = mount(OverviewView, {
+    props: {
+      dashboard: empty,
+      balanceMinor: "500000",
+      balanceAsOf: "2026-10-31",
+      hidden: false,
+      ...previewProps,
+    },
+    global,
+  });
+  expect(wrapper.get(".summary-card.primary .metric-value").text()).toBe(
+    "R0.00",
+  );
+  expect(wrapper.get(".mobile-balance-context").text()).toContain("R5,000.00");
+  expect(wrapper.get(".analysis-empty").text()).toContain(
+    "Try another account or period.",
+  );
+  expect(wrapper.findAll(".analysis .panel")).toHaveLength(1);
+  expect(wrapper.find(".trend-chart").exists()).toBe(false);
+  expect(wrapper.find(".transactions").exists()).toBe(true);
+  await wrapper.setProps({
+    dashboard: {
+      ...empty,
+      summary: {
+        ...empty.summary,
+        grossSpendingMinor: "10000",
+        spendingCreditsMinor: "10000",
+      },
+    },
+  });
+  expect(wrapper.find(".analysis-empty").exists()).toBe(false);
+  expect(wrapper.find(".trend-chart").exists()).toBe(true);
+  wrapper.unmount();
+});
 
 it("keeps ten signed categories available through the desktop disclosure", async () => {
   const names = [
@@ -72,7 +169,7 @@ it("keeps ten signed categories available through the desktop disclosure", async
     global,
   });
   expect(wrapper.findAll(".category-row")).toHaveLength(10);
-  const toggle = wrapper.get(".category-toggle");
+  const toggle = wrapper.get(".category-toggle.desktop-needed");
   expect(toggle.classes()).toContain("desktop-needed");
   expect(toggle.attributes("aria-expanded")).toBe("false");
   expect(toggle.attributes("aria-controls")).toBe("overview-categories");
@@ -105,6 +202,62 @@ it("shows exact authoritative amounts and hides every accessible amount", () => 
     expect(wrapper.attributes("aria-label") ?? "").not.toMatch(/R[\d,]+\.\d\d/);
     expect(wrapper.text()).toContain("Amounts hidden");
   });
+});
+
+it("shows the selected posted balance on mobile and masks it with other amounts", async () => {
+  const wrapper = mount(OverviewView, {
+    props: {
+      dashboard,
+      balanceMinor: "-12000",
+      balanceAsOf: "2026-10-31",
+      hidden: false,
+      ...previewProps,
+    },
+    global,
+  });
+  expect(wrapper.get(".mobile-balance-context").text()).toBe(
+    "Balance −R120.00 · posted 31 Oct 2026",
+  );
+  await wrapper.setProps({ hidden: true });
+  expect(wrapper.get(".mobile-balance-context").text()).toContain("••••");
+  expect(wrapper.text()).not.toContain("R120.00");
+  await wrapper.setProps({ hidden: false, balanceMinor: null });
+  expect(wrapper.get(".mobile-balance-context").text()).toContain(
+    "Unavailable",
+  );
+  wrapper.unmount();
+});
+
+it("uses the same mobile category scale for spending and refunds", () => {
+  const wrapper = mount(OverviewView, {
+    props: {
+      dashboard: {
+        ...dashboard,
+        categories: [
+          {
+            categoryCode: "GROCERIES",
+            displayName: "Groceries",
+            netSpendingMinor: "420000",
+          },
+          {
+            categoryCode: "HEALTH",
+            displayName: "Health",
+            netSpendingMinor: "-210000",
+          },
+        ],
+      },
+      hidden: false,
+      ...previewProps,
+    },
+    global,
+  });
+  expect(
+    wrapper.findAll(".signed-bar").map((bar) => bar.attributes("style")),
+  ).toEqual([
+    expect.stringContaining("--mobile-width: 100%"),
+    expect.stringContaining("--mobile-width: 50%"),
+  ]);
+  wrapper.unmount();
 });
 
 it.each([

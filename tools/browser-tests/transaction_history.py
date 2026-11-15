@@ -34,7 +34,7 @@ with sync_playwright() as playwright:
     expect(page.get_by_text("No transactions match these filters.")).to_be_visible()
     page.get_by_role("button", name="Reset filters").click()
     expect(page.locator(".activity-table tbody tr")).to_have_count(13)
-    page.get_by_label("Search transactions").fill("  CITYLINK  ")
+    page.get_by_role("searchbox").fill("  CITYLINK  ")
     expect(page.locator(".activity-table tbody tr")).to_have_count(2)
     page.locator(".transaction-filter-menu summary").click()
     page.get_by_role("button", name="Reset filters").click()
@@ -56,11 +56,12 @@ with sync_playwright() as playwright:
     expect(page.locator(".activity-table tbody tr")).to_have_count(13)
     transaction_requests = []
     page.on("request", lambda request: transaction_requests.append(request.url) if "/api/v1/transactions?" in request.url else None)
-    search_field = page.get_by_label("Search transactions")
+    search_field = page.get_by_role("searchbox")
     before_invalid = len(transaction_requests)
     search_field.fill("😀")
-    expect(page.locator("#transaction-search-error")).to_contain_text("at least 2")
-    expect(search_field).to_have_attribute("aria-describedby", "transaction-search-error")
+    expect(page.locator("#transaction-search-hint")).to_contain_text("one more character")
+    expect(search_field).to_have_attribute("aria-describedby", "transaction-search-hint")
+    expect(search_field).to_have_attribute("aria-invalid", "false")
     page.wait_for_timeout(350)
     assert len(transaction_requests) == before_invalid
     assert "Transactions could not be loaded." not in page.locator("body").inner_text()
@@ -96,7 +97,12 @@ with sync_playwright() as playwright:
         assert amount.evaluate("el => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && el.scrollWidth <= el.clientWidth + 1 }") , width
         if width < 600:
             assert page.locator(".mobile-nav-anchor").is_visible()
-            assert page.evaluate("() => { window.scrollTo(0, document.body.scrollHeight); return document.querySelector('.activity-pagination').getBoundingClientRect().bottom <= innerHeight - 50 }") , width
+            assert page.evaluate("""() => {
+                window.scrollTo(0, document.body.scrollHeight);
+                const end = document.querySelector('.activity-pagination')
+                  ?? document.querySelector('.activity-surface');
+                return end.getBoundingClientRect().bottom <= innerHeight - 50;
+            }""") , width
         if width in (320, 768, 841):
             page.locator(".activity-link").first.click()
             expect(page.locator(".detail-close")).to_be_focused()

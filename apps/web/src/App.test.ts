@@ -59,6 +59,72 @@ it("shows sign in after a rejected session bootstrap", async () => {
   vi.unstubAllGlobals();
 });
 
+it("honours a transaction deep link but returns to Overview after sign-out", async () => {
+  location.hash = "#transactions";
+  const session = {
+    customerId: "c1",
+    displayName: "Sample Customer",
+    expiresAtEpochMillis: Date.now() + 900000,
+  };
+  const dataset = accountResponse("2026-10-31").dataset;
+  const response = (body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  const fetch = vi.fn(async (request: Request) => {
+    const path = new URL(request.url).pathname;
+    if (path.endsWith("/auth/session"))
+      return new Response(null, { status: 401 });
+    if (path.endsWith("/auth/csrf")) return response({ token: "test" });
+    if (path.endsWith("/auth/login")) return response(session);
+    if (path.endsWith("/auth/logout"))
+      return new Response(null, { status: 204 });
+    if (path.endsWith("/accounts"))
+      return response(accountResponse("2026-10-31"));
+    if (path.endsWith("/dashboard"))
+      return response({
+        scope: { from: "2026-10-01", to: "2026-10-31", accountIds: ["a1"] },
+        summary: {
+          incomeMinor: "0",
+          grossSpendingMinor: "0",
+          spendingCreditsMinor: "0",
+          netSpendingMinor: "0",
+          ownAccountFlowMinor: "0",
+          netMovementMinor: "0",
+        },
+        categories: [],
+        trend: [],
+        dataset,
+      });
+    return response({ items: [], nextCursor: null, dataset });
+  });
+  vi.stubGlobal("fetch", fetch);
+  const wrapper = mount(App, {
+    global: { plugins: [[VueQueryPlugin, { queryClient: new QueryClient() }]] },
+  });
+  const signIn = async () => {
+    await wrapper.get("#login-id").setValue("synthetic-00007");
+    await wrapper.get("#password").setValue("password");
+    await wrapper.get(".sign-card").trigger("submit");
+    await flushPromises();
+  };
+  try {
+    await flushPromises();
+    await signIn();
+    expect(wrapper.get(".page-heading h1").text()).toBe("Transactions");
+    await wrapper.get(".sign-out-button").trigger("click");
+    await flushPromises();
+    expect(location.hash).toBe("#overview");
+    await signIn();
+    expect(wrapper.get(".page-heading h1").text()).toBe("Your spending");
+  } finally {
+    wrapper.unmount();
+    vi.unstubAllGlobals();
+    location.hash = "";
+  }
+});
+
 it("renders the server dashboard after session and account lookup", async () => {
   const dataset = {
     scope: { from: "2026-11-01", to: "2026-11-11", accountIds: ["a1"] },
@@ -113,6 +179,9 @@ it("renders the server dashboard after session and account lookup", async () => 
   await flushPromises();
   await flushPromises();
   expect(wrapper.text()).toContain("R850.00");
+  expect(wrapper.get(".sidebar-identity img").attributes("src")).toContain(
+    "svg",
+  );
   expect(wrapper.find(".profile-popover").text()).toContain("Sign out");
   expect(
     fetch.mock.calls.some((call) =>
@@ -128,7 +197,7 @@ it("renders the server dashboard after session and account lookup", async () => 
   vi.unstubAllGlobals();
 });
 
-it("refreshes posted balances and spending repeatedly without reloading", async () => {
+it("recovers from a balance and spending revision mismatch with inline retry", async () => {
   let posted = false;
   let accountRequests = 0;
   const response = (body: unknown) =>
@@ -150,7 +219,7 @@ it("refreshes posted balances and spending repeatedly without reloading", async 
         ...accountResponse("2026-10-31", posted ? "491500" : "500000"),
         dataset: {
           ...accountResponse("2026-10-31").dataset,
-          customerRevision: posted ? 1 : 0,
+          customerRevision: 1,
         },
       });
     }
@@ -192,16 +261,18 @@ it("refreshes posted balances and spending repeatedly without reloading", async 
   try {
     await flushPromises();
     await flushPromises();
-    expect(wrapper.get(".account-button").text()).toContain("R5,000.00");
+    expect(wrapper.get(".global-filters .state-panel").text()).toContain(
+      "Account balances and spending are updating.",
+    );
     posted = true;
-    await wrapper.get('[aria-label="Refresh data"]').trigger("click");
+    expect(wrapper.find(".refresh-button").exists()).toBe(false);
+    expect(wrapper.get(".profile-popover").text()).not.toContain("Refresh");
+    const requestsBeforeRetry = accountRequests;
+    await wrapper.get(".global-filters .state-panel button").trigger("click");
     await flushPromises();
     expect(wrapper.get(".account-button").text()).toContain("R4,915.00");
     expect(wrapper.get(".summary-card.primary").text()).toContain("−R85.00");
-    await wrapper.get('[aria-label="Refresh data"]').trigger("click");
-    await flushPromises();
-    expect(wrapper.get(".account-button").text()).toContain("R4,915.00");
-    expect(accountRequests).toBe(3);
+    expect(accountRequests).toBeGreaterThan(requestsBeforeRetry);
   } finally {
     wrapper.unmount();
     vi.unstubAllGlobals();
@@ -398,7 +469,7 @@ it("keeps cached spending concealed after failed logout until a server session c
     await flushPromises();
     await flushPromises();
     expect(wrapper.text()).toContain("R850.00");
-    await wrapper.get(".profile-popover button").trigger("click");
+    await wrapper.get(".sign-out-button").trigger("click");
     await flushPromises();
     expect(wrapper.text()).toContain("Sign out could not be confirmed");
     expect(wrapper.text()).not.toContain("R850.00");
@@ -408,7 +479,7 @@ it("keeps cached spending concealed after failed logout until a server session c
     await flushPromises();
     expect(wrapper.text()).toContain("R850.00");
     failLogout = false;
-    await wrapper.get(".profile-popover button").trigger("click");
+    await wrapper.get(".sign-out-button").trigger("click");
     await flushPromises();
     expect(wrapper.text()).not.toContain("R850.00");
     expect(wrapper.get("h1").text()).toBe("Welcome back");
@@ -503,7 +574,7 @@ it("rejects a late previous-customer dashboard after logout and new login", asyn
         new URL((request as Request).url).pathname.endsWith("/dashboard"),
       ),
     ).toBe(true);
-    await wrapper.get(".profile-popover button").trigger("click");
+    await wrapper.get(".sign-out-button").trigger("click");
     await flushPromises();
     releaseOld?.(response(dashboard("999900")));
     await flushPromises();

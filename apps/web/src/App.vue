@@ -25,9 +25,8 @@ const reconciling = ref(false);
 const generation = ref(0);
 const sessionLocked = ref(false);
 const hidden = computed(() => sessionLocked.value);
-const view = ref<"overview" | "transactions">(
-  location.hash.startsWith("#transactions") ? "transactions" : "overview",
-);
+const view = ref<"overview" | "transactions">(viewFromHash());
+const mobileSearchOpen = ref(false);
 const selectedAccount = ref("");
 const accountSelectionInitialized = ref(false);
 const transactionExplorer = ref<InstanceType<
@@ -37,6 +36,11 @@ const detailId = ref<string | null>(parseDetail());
 function parseDetail() {
   const match = location.hash.match(/^#transactions\/(au|pe)_[A-Za-z0-9_-]+$/);
   return match ? location.hash.slice("#transactions/".length) : null;
+}
+function viewFromHash(): "overview" | "transactions" {
+  return location.hash === "#transactions" || parseDetail()
+    ? "transactions"
+    : "overview";
 }
 function openDetail(id: string) {
   detailId.value = id;
@@ -53,6 +57,14 @@ const status = ref("");
 const accountIds = computed(() =>
   selectedAccount.value ? [selectedAccount.value] : [],
 );
+const postedBalance = computed(() => {
+  const response = accounts.data.value;
+  if (!response) return null;
+  return selectedAccount.value
+    ? (response.accounts.find((account) => account.id === selectedAccount.value)
+        ?.postedBalanceMinor ?? null)
+    : response.combinedPostedBalanceMinor;
+});
 let concealTimer: ReturnType<typeof setTimeout> | undefined;
 
 function clearSensitiveState() {
@@ -68,6 +80,7 @@ function clearSensitiveState() {
   reconciliationAttempted.value = false;
   reconciling.value = false;
   refreshing.value = false;
+  mobileSearchOpen.value = false;
   client.clear();
 }
 
@@ -212,6 +225,8 @@ async function validateSession() {
     }
     session.value = current;
     sessionLocked.value = false;
+    view.value = viewFromHash();
+    detailId.value = parseDetail();
   } catch {
     if (check !== sessionCheck) return;
     clearSensitiveState();
@@ -231,6 +246,12 @@ async function signOut() {
     return;
   }
   clearSensitiveState();
+  view.value = "overview";
+  history.replaceState(
+    history.state,
+    "",
+    `${location.pathname}${location.search}#overview`,
+  );
   booting.value = false;
   status.value = "You have signed out.";
   channel?.postMessage("session-changed");
@@ -240,6 +261,8 @@ function signedIn(current: Session) {
   clearSensitiveState();
   session.value = current;
   sessionLocked.value = false;
+  view.value = viewFromHash();
+  detailId.value = parseDetail();
   booting.value = false;
   status.value = "";
   channel?.postMessage("session-changed");
@@ -306,7 +329,7 @@ async function refresh() {
       if (scope() !== currentScope) return;
       if (snapshotMismatch.value) {
         status.value =
-          "Account balances and spending did not align. Try Refresh again.";
+          "Account balances and spending did not align. Try again.";
         return;
       }
     }
@@ -351,8 +374,7 @@ async function reconcileActivity() {
   )
     return;
   if (reconciliationAttempted.value) {
-    status.value =
-      "Updated activity is available. Use Refresh to align your view.";
+    status.value = "Updated activity is available. Retry to align your view.";
     return;
   }
   reconciliationAttempted.value = true;
@@ -360,8 +382,7 @@ async function reconcileActivity() {
   try {
     const accountResult = await accounts.refetch();
     if (accountResult.isError) {
-      status.value =
-        "Updated account balances are unavailable. Use Refresh to retry.";
+      status.value = "Updated account balances are unavailable. Try again.";
       return;
     }
     if (accountResult.data?.accounts.length) await dashboard.refetch();
@@ -377,8 +398,7 @@ async function reconcileActivity() {
 function activityAligned() {
   if (
     !snapshotMismatch.value &&
-    status.value ===
-      "Updated activity is available. Use Refresh to align your view."
+    status.value === "Updated activity is available. Retry to align your view."
   )
     status.value = "";
 }
@@ -389,6 +409,7 @@ function setPeriod(period: { from: string; to: string }) {
 }
 function setView(next: "overview" | "transactions") {
   view.value = next;
+  mobileSearchOpen.value = false;
   detailId.value = null;
   location.hash = next;
 }
@@ -397,9 +418,8 @@ function openCategory(code: string) {
   setView("transactions");
 }
 function onHashChange() {
-  view.value = location.hash.startsWith("#transactions")
-    ? "transactions"
-    : "overview";
+  mobileSearchOpen.value = false;
+  view.value = viewFromHash();
   detailId.value = parseDetail();
 }
 function onPageShow(event: PageTransitionEvent) {
@@ -439,9 +459,9 @@ onUnmounted(() => {
     :signed-in="!!session"
     :view="view"
     :session-locked="sessionLocked"
-    :refreshing="refreshing"
+    :search-open="mobileSearchOpen"
     @navigate="setView"
-    @refresh="refresh"
+    @search="mobileSearchOpen = !mobileSearchOpen"
     @sign-out="signOut"
   />
   <main v-if="booting" class="signed-out">
@@ -452,9 +472,17 @@ onUnmounted(() => {
     <p v-if="refreshing" class="sr-only" role="status">
       Refreshing account balances and spending…
     </p>
-    <p v-if="status" class="state-panel error" role="alert">
+    <div v-if="status" class="state-panel error" role="alert">
       {{ status }}
-    </p>
+      <button
+        v-if="reconciliationAttempted"
+        type="button"
+        :disabled="refreshing"
+        @click="refresh"
+      >
+        Retry
+      </button>
+    </div>
     <button
       v-if="sessionLocked"
       type="button"
@@ -494,10 +522,12 @@ onUnmounted(() => {
       </div>
       <template v-else-if="accounts.data.value">
         <div class="global-filters">
-          <p v-if="snapshotMismatch" class="state-panel" role="status">
-            Account balances and spending are updating. Use Refresh if this
-            continues.
-          </p>
+          <div v-if="snapshotMismatch" class="state-panel" role="status">
+            Account balances and spending are updating.
+            <button type="button" :disabled="refreshing" @click="refresh">
+              Retry
+            </button>
+          </div>
           <AccountBalances
             v-else
             v-model:account-id="selectedAccount"
@@ -542,6 +572,8 @@ onUnmounted(() => {
         <OverviewView
           v-else-if="dashboard.data.value"
           :dashboard="dashboard.data.value"
+          :balance-minor="postedBalance"
+          :balance-as-of="accounts.data.value.balanceAsOfDate"
           :hidden="hidden"
           :customer-id="session.customerId"
           :account-ids="accountIds"
@@ -592,6 +624,7 @@ onUnmounted(() => {
         :from="from"
         :to="to"
         :hidden="hidden"
+        :mobile-search-open="mobileSearchOpen"
         :active="
           view === 'transactions' &&
           !sessionLocked &&
