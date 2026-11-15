@@ -23,7 +23,7 @@ public class ReportingScope {
             List<String> accounts,
             LocalDate from,
             LocalDate to,
-            FinancialController.Dataset dataset) {
+            FinancialQuery.Dataset dataset) {
         public Resolved canonical() {
             return new Resolved(owner, accounts.stream().sorted().toList(), from, to, dataset);
         }
@@ -31,7 +31,7 @@ public class ReportingScope {
 
     public Resolved resolve(
             String owner, String accountIds, String from, String to, boolean activity) {
-        FinancialController.Dataset dataset = dataset(owner);
+        FinancialQuery.Dataset dataset = dataset(owner);
         LocalDate end = date(to, dataset.referenceDate(), activity);
         LocalDate start = date(from, end.withDayOfMonth(1), activity);
         if (start.isAfter(end)
@@ -74,13 +74,13 @@ public class ReportingScope {
         return new Resolved(owner, List.copyOf(selected), start, end, dataset);
     }
 
-    public FinancialController.Dataset dataset(String owner) {
-        FinancialController.Dataset dataset =
+    public FinancialQuery.Dataset dataset(String owner) {
+        FinancialQuery.Dataset dataset =
                 jdbc.query(
                         "SELECT d.dataset_id,d.instance_epoch,c.customer_revision,d.reference_date FROM dataset_instance d CROSS JOIN customers c WHERE d.singleton=true AND c.id=?",
                         rs ->
                                 rs.next()
-                                        ? new FinancialController.Dataset(
+                                        ? new FinancialQuery.Dataset(
                                                 rs.getString(1),
                                                 rs.getString(2),
                                                 rs.getLong(3),

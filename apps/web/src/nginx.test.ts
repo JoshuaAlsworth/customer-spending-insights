@@ -31,3 +31,16 @@ it("keeps the secure profile on TLS with Secure-cookie forwarding", () => {
   expect(secureConfig).toMatch(/add_header Content-Security-Policy/);
   expect(secureConfig).toMatch(/zone=login_limit:10m rate=1r\/s/);
 });
+
+it("protects HTTP documents without requiring HTTPS", () => {
+  for (const header of [
+    "X-Content-Type-Options nosniff",
+    "X-Frame-Options DENY",
+    "Referrer-Policy no-referrer",
+    "Content-Security-Policy",
+  ]) {
+    expect(config).toContain(`add_header ${header}`);
+    expect(secureConfig).toContain(`add_header ${header}`);
+  }
+  expect(config).not.toContain("Strict-Transport-Security");
+});

@@ -134,13 +134,6 @@ const trendPeak = computed(() =>
     null,
   ),
 );
-const trendAxis = computed(() => {
-  const max = trendBound.value;
-  if (!max) return ["R0"];
-  return [4n, 3n, 2n, 1n, 0n].map((part) =>
-    money(((max * part) / 4n).toString()).replace(/\.00$/, ""),
-  );
-});
 const trendLabel = (from: string, to: string) =>
   from === to
     ? shortDate(from)
@@ -214,15 +207,39 @@ const trendBound = computed(() => {
         : raw <= base * 5n
           ? base * 5n
           : base * 10n;
-  return ((max + step - 1n) / step) * step;
+  return ((((max + step - 1n) / step) * step + 3n) / 4n) * 4n;
 });
-const trendHeight = (value: string) => {
-  const amount = BigInt(value);
-  const maximum = trendBound.value;
-  if (amount === 0n || maximum === 0n) return "0%";
-  const magnitude = amount < 0n ? -amount : amount;
-  const capacity = hasNegativeTrend.value ? 45 : 90;
-  return `${Number((magnitude * BigInt(capacity)) / maximum)}%`;
+const trendDomain = computed(() => {
+  const bound = trendBound.value || 4n;
+  const positive = props.dashboard.trend.some(
+    (bucket) => BigInt(bucket.netSpendingMinor) > 0n,
+  );
+  return {
+    min: hasNegativeTrend.value ? -bound : 0n,
+    max: positive || !hasNegativeTrend.value ? bound : 0n,
+  };
+});
+const trendPosition = (amount: bigint) => {
+  const { min, max } = trendDomain.value;
+  return Number(((max - amount) * 10000n) / (max - min)) / 100;
+};
+const trendAxis = computed(() => {
+  const { min, max } = trendDomain.value;
+  return [0n, 1n, 2n, 3n, 4n].map((part) => {
+    const amount = max - ((max - min) * part) / 4n;
+    return {
+      label: money(amount.toString()).replace(/\.00$/, ""),
+      top: `${trendPosition(amount)}%`,
+    };
+  });
+});
+const trendStyle = (value: string) => {
+  const position = trendPosition(BigInt(value));
+  const zero = trendPosition(0n);
+  return {
+    top: `${Math.min(position, zero)}%`,
+    height: `${Math.abs(position - zero)}%`,
+  };
 };
 </script>
 
@@ -263,6 +280,13 @@ const trendHeight = (value: string) => {
         <div class="metric-value">
           {{ shown(dashboard.summary.netMovementMinor, true) }}
         </div>
+        <p
+          v-if="!hidden && BigInt(dashboard.summary.ownAccountFlowMinor) !== 0n"
+          class="metric-note transfer-note"
+        >
+          Includes {{ money(dashboard.summary.ownAccountFlowMinor, true) }} net
+          transfers between your own accounts.
+        </p>
       </article>
     </section>
     <p v-if="balanceAsOf" class="mobile-balance-context">
@@ -365,9 +389,7 @@ const trendHeight = (value: string) => {
       <article class="panel trend-panel">
         <div class="section-head">
           <h2>Spending over time</h2>
-          <span class="section-meta">{{
-            dashboard.trend.length < 3 ? "Monthly totals" : "Weekly totals"
-          }}</span>
+          <span class="section-meta">Period totals</span>
         </div>
         <p v-if="hidden" class="masked-visual">Amounts hidden</p>
         <p v-else-if="!dashboard.trend.length" class="compact-empty">
@@ -380,15 +402,25 @@ const trendHeight = (value: string) => {
             role="group"
             aria-label="Spending by period"
           >
-            <div class="trend-axis" aria-hidden="true">
-              <span v-for="tick in trendAxis" :key="tick">{{ tick }}</span>
-            </div>
             <div
               class="trend-plot"
               :style="{
                 gridTemplateColumns: `repeat(${dashboard.trend.length}, minmax(0, 1fr))`,
               }"
             >
+              <div class="trend-axis" aria-hidden="true">
+                <span
+                  v-for="tick in trendAxis"
+                  :key="tick.label"
+                  :style="{ top: tick.top }"
+                  >{{ tick.label }}</span
+                >
+              </div>
+              <span
+                class="trend-zero"
+                aria-hidden="true"
+                :style="{ top: `${trendPosition(0n)}%` }"
+              />
               <button
                 v-for="bucket in dashboard.trend"
                 :key="bucket.from"
@@ -403,7 +435,7 @@ const trendHeight = (value: string) => {
                 <span
                   class="trend-bar"
                   :class="{ negative: BigInt(bucket.netSpendingMinor) < 0n }"
-                  :style="{ height: trendHeight(bucket.netSpendingMinor) }"
+                  :style="trendStyle(bucket.netSpendingMinor)"
                 />
               </button>
             </div>
@@ -423,9 +455,7 @@ const trendHeight = (value: string) => {
             </p>
           </div>
           <div v-if="trendPeak" class="trend-peak">
-            <span
-              >Highest spending
-              {{ dashboard.trend.length < 3 ? "period" : "week" }}</span
+            <span>Highest spending period</span
             ><strong
               >{{ trendLabel(trendPeak.from, trendPeak.to) }} ·
               {{ money(trendPeak.netSpendingMinor) }}</strong

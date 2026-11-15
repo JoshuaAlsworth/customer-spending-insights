@@ -143,9 +143,9 @@ public class AuthController {
             jdbc.update(
                     """
                     UPDATE login_attempts SET
-                      attempts=CASE WHEN window_started_at<now()-interval '1 hour' THEN 1 ELSE LEAST(attempts+1,5) END,
-                      window_started_at=CASE WHEN window_started_at<now()-interval '1 hour' THEN now() ELSE window_started_at END,
-                      blocked_until=CASE WHEN window_started_at<now()-interval '1 hour' THEN NULL
+                      attempts=CASE WHEN window_started_at<now()-interval '1 hour' OR blocked_until<=now() THEN 1 ELSE LEAST(attempts+1,5) END,
+                      window_started_at=CASE WHEN window_started_at<now()-interval '1 hour' OR blocked_until<=now() THEN now() ELSE window_started_at END,
+                      blocked_until=CASE WHEN window_started_at<now()-interval '1 hour' OR blocked_until<=now() THEN NULL
                                          WHEN blocked_until IS NULL AND attempts>=4 THEN now()+interval '15 minutes'
                                          ELSE blocked_until END
                     WHERE login_key=?

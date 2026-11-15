@@ -46,4 +46,20 @@ tasks.withType<Test> {
     useJUnitPlatform()
     dependsOn(tasks.bootJar)
     systemProperty("csi.test.jar", tasks.bootJar.get().archiveFile.get().asFile.absolutePath)
+    // Enforce the same executed, unskipped suite for host, CI and Docker entry points.
+    doLast {
+        val reports = fileTree(layout.buildDirectory.dir("test-results/test")) { include("TEST-*.xml") }
+        val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        var executed = 0
+        reports.forEach { report ->
+            val suite = factory.newDocumentBuilder().parse(report).documentElement
+            executed += suite.getAttribute("tests").toInt()
+            check(listOf("failures", "errors", "skipped").all { suite.getAttribute(it).toInt() == 0 }) {
+                "Java tests failed or skipped: ${report.name}"
+            }
+        }
+        check(executed > 0) { "Java test reports missing or empty" }
+        logger.lifecycle("Java tests executed: $executed; zero failures, errors or skips")
+    }
 }

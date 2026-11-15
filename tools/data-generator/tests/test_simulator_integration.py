@@ -1157,3 +1157,78 @@ def test_post_cancel_race_has_one_winner(simulator):
         project,
         "SELECT operation||'|'||(result->>'status') FROM simulator_events WHERE event_id IN ('sim:event:racepostcancelpost','sim:event:racepostcancelcancel')",
     ) == ("post|POSTED" if winner == "POSTED" else "cancel|CANCELLED")
+
+
+def test_required_fields_rejected_at_restricted_boundary(simulator):
+    project, env = simulator
+    outcome(
+        simulate(
+            simulator,
+            "pending",
+            "boundaryauth",
+            "f01-everyday",
+            "sim-test-merchant",
+            1000,
+            "2026-10-30T10:00:00+02:00",
+            "Boundary validation",
+        )
+    )
+    snapshot_sql = "SELECT jsonb_build_array((SELECT jsonb_agg(a ORDER BY id) FROM authorizations a), (SELECT jsonb_agg(e ORDER BY event_id) FROM simulator_events e), (SELECT jsonb_agg(c ORDER BY id) FROM customers c), (SELECT count(*) FROM posted_entries), (SELECT count(*) FROM source_events))"
+    before = state(project, snapshot_sql)
+    requests = {
+        "cancel": {
+            "authorization_id": "sim_auth_boundaryauth",
+            "cancelled_at": "2026-10-30T11:00:00+02:00",
+        },
+        "post": {
+            "authorization_id": "sim_auth_boundaryauth",
+            "amount_minor": 1000,
+            "posted_at": "2026-10-30T11:00:00+02:00",
+        },
+        "pending": {
+            "account_id": "f01-everyday",
+            "merchant_id": "sim-test-merchant",
+            "amount_minor": 1000,
+            "occurred_at": "2026-10-30T10:00:00+02:00",
+            "description": "Boundary validation",
+        },
+    }
+    index = 0
+    for operation, valid in requests.items():
+        for field in valid:
+            for invalid in (None, {}, [], True, "missing", "wrong-type"):
+                payload = dict(valid)
+                if invalid == "missing":
+                    del payload[field]
+                else:
+                    payload[field] = (
+                        "1000"
+                        if field == "amount_minor" and invalid == "wrong-type"
+                        else 123
+                        if invalid == "wrong-type"
+                        else invalid
+                    )
+                index += 1
+                sql = f"SELECT simulate_transaction('{operation}','boundary{index}', $payload${json.dumps(payload)}$payload$::jsonb);"
+                result = command(
+                    "docker",
+                    "compose",
+                    "-p",
+                    project,
+                    "--profile",
+                    "simulator",
+                    "run",
+                    "--rm",
+                    "-T",
+                    "--no-deps",
+                    "db-sim",
+                    env=env,
+                    input=sql,
+                )
+                assert result.returncode != 0, (
+                    operation,
+                    field,
+                    invalid,
+                    result.stdout,
+                )
+                assert state(project, snapshot_sql) == before
