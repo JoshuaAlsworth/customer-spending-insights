@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { nextTick, onMounted, ref } from "vue";
 import { login, type Session } from "../../api/client";
 
 defineProps<{ status: string }>();
 const emit = defineEmits<{ "signed-in": [session: Session] }>();
 const loginId = ref("");
 const password = ref("");
+const loginIdField = ref<HTMLInputElement | null>(null);
+const passwordField = ref<HTMLInputElement | null>(null);
 const busy = ref(false);
 const error = ref("");
 const loginIdError = ref("");
@@ -28,7 +30,11 @@ onMounted(() => {
 async function submit() {
   loginIdError.value = loginId.value.trim() ? "" : "Enter your Login ID.";
   passwordError.value = password.value ? "" : "Enter your password.";
-  if (loginIdError.value || passwordError.value) return;
+  if (loginIdError.value || passwordError.value) {
+    await nextTick();
+    (loginIdError.value ? loginIdField : passwordField).value?.focus();
+    return;
+  }
   busy.value = true;
   error.value = "";
   try {
@@ -54,7 +60,10 @@ async function submit() {
 <template>
   <main class="signed-out login-view">
     <div class="login-pane">
-      <div class="login-brand">Spending Insights</div>
+      <div class="login-brand">
+        <img class="brand-logo" src="/spending-insights-logo.svg" alt="" />
+        Spending Insights
+      </div>
       <div class="login-content">
         <h1>Welcome back</h1>
         <form class="sign-card" novalidate @submit.prevent="submit">
@@ -63,7 +72,9 @@ async function submit() {
           <label for="login-id">Login ID</label>
           <input
             id="login-id"
+            ref="loginIdField"
             v-model="loginId"
+            name="username"
             type="text"
             autocomplete="username"
             spellcheck="false"
@@ -83,7 +94,9 @@ async function submit() {
           <div class="password-field">
             <input
               id="password"
+              ref="passwordField"
               v-model="password"
+              name="password"
               :type="showPassword ? 'text' : 'password'"
               autocomplete="current-password"
               :aria-invalid="!!passwordError"

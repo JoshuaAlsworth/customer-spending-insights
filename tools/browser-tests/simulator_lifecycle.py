@@ -1,4 +1,4 @@
-"""Focused browser journey for local operator simulation and manual refresh."""
+"""Focused browser journey for local operator simulation and page reload."""
 
 import os
 import subprocess
@@ -35,8 +35,6 @@ with sync_playwright() as playwright:
     page.get_by_label("Password", exact=True).fill("fixture-only-password")
     page.get_by_role("button", name="Sign in").click()
     expect(page.locator(".summary-card .metric-value")).to_have_count(3)
-    page.evaluate("window.refreshAcceptanceMarker = 'still-here'")
-    refresh = page.get_by_role("button", name="Refresh data")
     page.locator(".account-button").click()
     page.get_by_role("radio", name="All accounts").check()
     expect(page.locator(".summary-card .metric-value")).to_have_count(3)
@@ -54,9 +52,9 @@ with sync_playwright() as playwright:
     assert stale.status == 409 and stale.json()["code"] == "STALE_CURSOR"
     pending_row = page.locator(".activity-table tbody tr").filter(has_text="Browser simulator merchant")
     expect(pending_row).to_have_count(0)
-    refresh.click()
-    expect(refresh).to_be_enabled()
-    assert page.evaluate("window.refreshAcceptanceMarker") == "still-here"
+    page.reload(wait_until="networkidle")
+    page.locator(".account-button").click()
+    page.get_by_role("radio", name="All accounts").check()
     expect(pending_row).to_have_count(1)
     expect(page.locator(".activity-section").filter(has_text="Browser simulator merchant")).to_contain_text("Pending transactions")
     pending_row.locator(".activity-link").click()
@@ -72,13 +70,13 @@ with sync_playwright() as playwright:
     operator("simulate", project, project, "post", "browserpost", "sim_auth_browserpending",
              "24000", "2026-10-30T11:00:00+02:00")
     page.route("**/api/v1/accounts", lambda route: route.abort())
-    refresh.click()
-    expect(page.get_by_text("Account balances could not be refreshed. Try again.")).to_be_visible()
+    page.reload(wait_until="networkidle")
+    expect(page.get_by_text("Accounts could not be loaded.")).to_be_visible()
     page.unroute("**/api/v1/accounts")
-    refresh.click()
-    expect(refresh).to_be_enabled()
-    assert page.evaluate("window.refreshAcceptanceMarker") == "still-here"
-    expect(page.get_by_label("Status")).to_have_value("PENDING")
+    page.get_by_role("button", name="Retry").click()
+    page.locator(".account-button").click()
+    page.get_by_role("radio", name="All accounts").check()
+    page.locator(".transaction-filter-menu summary").click()
     page.get_by_label("Status").select_option("ALL")
     page.locator(".transaction-filter-menu summary").click()
     posted_row = page.locator(".activity-table tbody tr").filter(has_text="Browser simulator merchant")
@@ -94,8 +92,9 @@ with sync_playwright() as playwright:
     balances_after = page.request.get(base + "/api/v1/accounts").json()
     assert int(balances_after["combinedPostedBalanceMinor"]) - int(balances_before["combinedPostedBalanceMinor"]) == -24000
     expect(page.locator(".selected-balance")).to_contain_text("R25,410.00")
-    refresh.click()
-    expect(refresh).to_be_enabled()
+    page.reload(wait_until="networkidle")
+    page.locator(".account-button").click()
+    page.get_by_role("radio", name="All accounts").check()
     expect(posted_row).to_have_count(1)
     assert page.request.get(base + "/api/v1/dashboard").json()["summary"] == after["summary"]
     page.locator(".sidebar-nav").get_by_role("button", name="Overview").click()
@@ -105,9 +104,9 @@ with sync_playwright() as playwright:
     operator("simulate", project, project, "pending", "browsercancelpending", "f01-everyday",
              "browser-sim-merchant", "4300", "2026-10-30T12:00:00+02:00", "Browser cancel")
     operator("simulate", project, project, "cancel", "browsercancel", "sim_auth_browsercancelpending", "2026-10-30T12:30:00+02:00")
-    refresh.click()
-    expect(refresh).to_be_enabled()
-    assert page.evaluate("window.refreshAcceptanceMarker") == "still-here"
+    page.reload(wait_until="networkidle")
+    page.locator(".account-button").click()
+    page.get_by_role("radio", name="All accounts").check()
     page.locator(".sidebar-nav").get_by_role("button", name="Transactions").click()
     page.locator(".transaction-filter-menu summary").click()
     page.get_by_label("Status").select_option("CANCELLED")
@@ -119,7 +118,7 @@ with sync_playwright() as playwright:
     expect(page.locator(".selected-balance")).to_contain_text("R25,410.00")
 
     page.context.clear_cookies()
-    refresh.click()
+    page.reload(wait_until="networkidle")
     expect(page.get_by_label("Login ID")).to_be_visible()
     assert "R25,410.00" not in page.locator("body").inner_text()
 
@@ -133,4 +132,4 @@ with sync_playwright() as playwright:
     assert other.request.get(base + "/api/v1/simulate").status == 403
     other.close()
     browser.close()
-print("Simulator browser pending, post, cancel, refresh retry and session expiry passed")
+print("Simulator browser pending, post, cancel, page reload and session expiry passed")

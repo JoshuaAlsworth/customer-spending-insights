@@ -86,6 +86,16 @@ button:disabled {
   letter-spacing: -0.03em;
   white-space: nowrap;
 }
+.identity-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.brand-logo {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
 .main-nav {
   align-self: stretch;
   gap: 28px;
@@ -103,7 +113,6 @@ button:disabled {
   color: var(--deep);
   border-bottom-color: var(--blue);
 }
-.head-btn,
 .button {
   background: var(--surface);
   color: var(--ink);
@@ -113,7 +122,6 @@ button:disabled {
   padding: 0 var(--space-3);
   font-weight: 550;
 }
-.head-btn:hover,
 .button.secondary:hover {
   background: var(--pale);
   border-color: #aabbd8;
@@ -125,9 +133,6 @@ button:disabled {
 }
 .button.primary:hover {
   background: var(--deep);
-}
-.head-icon {
-  display: none;
 }
 .profile-menu {
   position: relative;
@@ -761,22 +766,6 @@ button:disabled {
   }
 }
 @media (max-width: 767px) {
-  .head-right .head-btn {
-    width: 36px;
-    height: 36px;
-    min-height: 36px;
-    padding: 0;
-    display: grid;
-    place-items: center;
-  }
-  .head-label {
-    display: none;
-  }
-  .head-icon {
-    display: inline;
-    font-size: 20px;
-    line-height: 1;
-  }
   .profile-menu summary {
     width: 36px;
     height: 36px;
@@ -867,6 +856,8 @@ button:disabled {
   *::before,
   *::after {
     scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0s !important;
   }
 }

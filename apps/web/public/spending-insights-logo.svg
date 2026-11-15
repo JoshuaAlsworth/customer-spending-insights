@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Spending Insights</title>
+  <defs>
+    <clipPath id="circle"><circle cx="32" cy="32" r="32"/></clipPath>
+    <linearGradient id="light" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#dcecff"/><stop offset="1" stop-color="#83b4f5"/></linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#427ad8"/><stop offset="1" stop-color="#184cba"/></linearGradient>
+  </defs>
+  <g clip-path="url(#circle)">
+    <path fill="#102d73" d="M0 0h64v64H0z"/>
+    <path fill="url(#light)" d="M-8 41C8 22 19 34 32 19S51 2 72-1v65H-8Z"/>
+    <path fill="url(#blue)" d="M-8 56C10 34 22 46 38 29S55 14 72 10v54H-8Z"/>
+    <path fill="#153a88" d="M-8 72C12 51 26 63 43 46S61 34 72 30v42Z"/>
+  </g>
+</svg>

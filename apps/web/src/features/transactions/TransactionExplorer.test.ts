@@ -64,6 +64,61 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it("closes transaction filters when the page is clicked outside", () => {
+  getTransactions.mockResolvedValue(page(null));
+  const wrapper = mountExplorer();
+  const filterMenu = wrapper.get(".transaction-filter-menu")
+    .element as HTMLDetailsElement;
+  filterMenu.open = true;
+  document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  expect(filterMenu.open).toBe(false);
+  wrapper.unmount();
+});
+
+it("opens pending, posted, and cancelled details from any row cell once", async () => {
+  getTransactions.mockResolvedValue({
+    items: [
+      posted,
+      {
+        ...posted,
+        id: "au_pending",
+        recordKind: "AUTHORIZATION",
+        status: "PENDING",
+        postedAt: null,
+        amountMinor: null,
+        categoryCode: null,
+      },
+      {
+        ...posted,
+        id: "au_cancelled",
+        recordKind: "AUTHORIZATION",
+        status: "CANCELLED",
+        postedAt: null,
+        amountMinor: null,
+        categoryCode: null,
+      },
+    ],
+    nextCursor: null,
+    dataset,
+  });
+  const wrapper = mountExplorer();
+  await flushPromises();
+  for (const [status, id] of [
+    ["pending", "au_pending"],
+    ["posted", "pe_one"],
+    ["cancelled", "au_cancelled"],
+  ]) {
+    await wrapper
+      .get(`.activity-section.${status} .transaction-row .amount`)
+      .trigger("click");
+    expect(wrapper.emitted("open")?.at(-1)).toEqual([id]);
+  }
+  expect(wrapper.emitted("open")).toHaveLength(3);
+  await wrapper.get(".activity-link").trigger("click");
+  expect(wrapper.emitted("open")).toHaveLength(4);
+  wrapper.unmount();
+});
+
 it("uses one responsive row source for keyset pages, resets filters, and hides amounts", async () => {
   getTransactions.mockImplementation(async (filters: { cursor?: string }) =>
     page(filters.cursor ? null : "next"),
@@ -72,18 +127,38 @@ it("uses one responsive row source for keyset pages, resets filters, and hides a
   await flushPromises();
   expect(wrapper.findAll(".activity-table tbody tr")).toHaveLength(1);
   expect(wrapper.findAll(".activity-section")).toHaveLength(1);
+  expect(wrapper.findAll(".transaction-filter-popover select")).toHaveLength(2);
+  expect(wrapper.text()).not.toContain("All types");
   expect(wrapper.get(".activity-section .subsection-title").text()).toBe(
     "Posted transactions",
   );
   expect(wrapper.findAll(".activity-card")).toHaveLength(0);
   expect(wrapper.text()).toContain("−R240.00");
+  expect(wrapper.get(".page-count strong").text()).toBe("Page 1");
+  expect(wrapper.get(".page-size").text()).toBe("1 on this page");
   await wrapper.get(".activity-pagination button:last-child").trigger("click");
   await flushPromises();
   expect(getTransactions.mock.calls.at(-1)?.[0].cursor).toBe("next");
+  expect(wrapper.get(".page-count strong").text()).toBe("Page 2");
+  expect(wrapper.get(".page-size").text()).toBe("1 on this page");
   await wrapper.get("select").setValue("PENDING");
   await flushPromises();
   expect(getTransactions.mock.calls.at(-1)?.[0].cursor).toBeUndefined();
   expect(getTransactions.mock.calls.at(-1)?.[0].status).toBe("PENDING");
+  expect(getTransactions.mock.calls.at(-1)?.[0]).not.toHaveProperty("type");
+  expect(
+    wrapper.get(".transaction-filter-menu summary").attributes("aria-label"),
+  ).toBe("Filters, active");
+  await wrapper
+    .findAll(".transaction-filter-popover select")[1]
+    .setValue("GROCERIES");
+  await flushPromises();
+  expect(getTransactions.mock.calls.at(-1)?.[0].category).toBe("GROCERIES");
+  await wrapper.get(".transaction-filter-popover button").trigger("click");
+  await flushPromises();
+  expect(
+    wrapper.get(".transaction-filter-menu summary").attributes("aria-label"),
+  ).toBe("Filters");
   await wrapper.setProps({ hidden: true });
   expect(wrapper.text()).not.toContain("R240.00");
   wrapper.unmount();
@@ -142,11 +217,10 @@ it("validates Unicode code points locally before sending search", async () => {
   const field = wrapper.get('input[type="search"]');
   const initialCalls = getTransactions.mock.calls.length;
   await field.setValue("😀");
-  expect(field.attributes("aria-invalid")).toBe("true");
-  expect(field.attributes("aria-describedby")).toBe("transaction-search-error");
-  expect(wrapper.get("#transaction-search-error").text()).toContain(
-    "at least 2",
-  );
+  expect(field.attributes("aria-invalid")).toBe("false");
+  expect(field.attributes("aria-describedby")).toBe("transaction-search-hint");
+  expect(wrapper.find("#transaction-search-error").exists()).toBe(false);
+  expect(wrapper.findAll(".activity-table tbody tr")).toHaveLength(1);
   await new Promise((resolve) => setTimeout(resolve, 330));
   expect(getTransactions).toHaveBeenCalledTimes(initialCalls);
   expect(wrapper.text()).not.toContain("Transactions could not be loaded.");
@@ -185,22 +259,33 @@ it("validates Unicode code points locally before sending search", async () => {
 it("does not show an older search response under newer filters", async () => {
   let resolveOld!: (value: ActivityPage) => void;
   let resolveNew!: (value: ActivityPage) => void;
-  getTransactions.mockImplementation(({ search }: { search?: string }) => {
-    if (search === "Cedar")
-      return new Promise<ActivityPage>((resolve) => (resolveOld = resolve));
-    if (search === "Harbor")
-      return new Promise<ActivityPage>((resolve) => (resolveNew = resolve));
-    return Promise.resolve(page(null));
-  });
+  let oldSignal: AbortSignal | undefined;
+  getTransactions.mockImplementation(
+    ({ search }: { search?: string }, signal: AbortSignal) => {
+      if (search === "Cedar") {
+        oldSignal = signal;
+        return new Promise<ActivityPage>((resolve) => (resolveOld = resolve));
+      }
+      if (search === "Harbor")
+        return new Promise<ActivityPage>((resolve) => (resolveNew = resolve));
+      return Promise.resolve(page(null));
+    },
+  );
   const wrapper = mountExplorer();
   await flushPromises();
   const field = wrapper.get('input[type="search"]');
   await field.setValue("Cedar");
+  expect(wrapper.findAll(".activity-table tbody tr")).toHaveLength(1);
+  expect(wrapper.find(".state-panel").exists()).toBe(false);
+  expect(wrapper.find(".search-progress").exists()).toBe(true);
   await new Promise((resolve) => setTimeout(resolve, 330));
   await flushPromises();
+  expect(wrapper.findAll(".activity-table tbody tr")).toHaveLength(1);
   await field.setValue("Harbor");
   await new Promise((resolve) => setTimeout(resolve, 330));
   await flushPromises();
+  expect(wrapper.findAll(".activity-table tbody tr")).toHaveLength(1);
+  expect(oldSignal?.aborted).toBe(true);
   resolveNew({
     ...page(null),
     items: [{ ...posted, id: "pe_harbor", merchantName: "Harbor" }],
@@ -210,6 +295,25 @@ it("does not show an older search response under newer filters", async () => {
   resolveOld(page(null));
   await flushPromises();
   expect(wrapper.text()).toContain("Harbor");
+  expect(wrapper.text()).not.toContain("Cedar Market");
+  wrapper.unmount();
+});
+
+it("does not display another account or period while its search request is pending", async () => {
+  getTransactions.mockImplementation(
+    ({ accountIds, from }: { accountIds: string[]; from: string }) =>
+      accountIds[0] === "owned" && from === "2026-10-01"
+        ? Promise.resolve(page(null))
+        : new Promise<ActivityPage>(() => {}),
+  );
+  const wrapper = mountExplorer();
+  await flushPromises();
+  expect(wrapper.text()).toContain("Cedar Market");
+  await wrapper.setProps({ accountIds: ["other"] });
+  await flushPromises();
+  expect(wrapper.text()).not.toContain("Cedar Market");
+  await wrapper.setProps({ from: "2026-09-01", to: "2026-09-30" });
+  await flushPromises();
   expect(wrapper.text()).not.toContain("Cedar Market");
   wrapper.unmount();
 });
@@ -232,6 +336,22 @@ it("reports no activity in the selected period when older activity exists", asyn
   const wrapper = mountExplorer();
   await flushPromises();
   expect(wrapper.text()).toContain("No activity in this period.");
+  wrapper.unmount();
+});
+
+it("distinguishes filtered no-results from an account with no activity", async () => {
+  getTransactions.mockResolvedValue({ items: [], nextCursor: null, dataset });
+  const wrapper = mountExplorer();
+  await flushPromises();
+  await wrapper
+    .findAll(".transaction-filter-popover select")[1]
+    .setValue("GROCERIES");
+  await flushPromises();
+  expect(wrapper.text()).toContain("No transactions match these filters.");
+  expect(wrapper.get(".state-panel").attributes("role")).toBe("status");
+  expect(getTransactions.mock.calls.at(-1)?.[0]).toMatchObject({
+    category: "GROCERIES",
+  });
   wrapper.unmount();
 });
 

@@ -71,7 +71,6 @@ def test_database_and_openapi_type_policy_matches_json():
     assert (
         set(tax["types"])
         == _java_filter(java, "TYPES")
-        == _vue_filter(vue, "types")
         == set(contract["TransactionType"]["enum"])
     )
     assert (

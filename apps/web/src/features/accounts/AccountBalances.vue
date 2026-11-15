@@ -11,20 +11,49 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ "update:accountId": [value: string] }>();
 const picker = ref<HTMLDetailsElement | null>(null);
-function closePicker() {
+const popoverMaxHeight = ref(440);
+function closePicker(restoreFocus = true) {
   if (picker.value) picker.value.open = false;
+  if (restoreFocus)
+    void nextTick(() => picker.value?.querySelector("summary")?.focus());
+}
+function onToggle() {
+  if (picker.value?.open) updatePopoverHeight();
+}
+function updatePopoverHeight() {
+  if (!picker.value?.open) return;
+  const bottom =
+    picker.value.querySelector("summary")?.getBoundingClientRect().bottom ?? 0;
+  const viewport = window.visualViewport;
+  popoverMaxHeight.value = Math.max(
+    48,
+    (viewport ? viewport.offsetTop + viewport.height : window.innerHeight) -
+      bottom -
+      20,
+  );
 }
 function choose(id: string) {
   emit("update:accountId", id);
   closePicker();
-  void nextTick(() => picker.value?.querySelector("summary")?.focus());
 }
 function closeOutside(event: PointerEvent) {
   if (picker.value?.open && !picker.value.contains(event.target as Node))
-    closePicker();
+    closePicker(false);
 }
-onMounted(() => document.addEventListener("pointerdown", closeOutside));
-onUnmounted(() => document.removeEventListener("pointerdown", closeOutside));
+onMounted(() => {
+  document.addEventListener("pointerdown", closeOutside);
+  window.addEventListener("resize", updatePopoverHeight);
+  window.addEventListener("scroll", updatePopoverHeight, true);
+  window.visualViewport?.addEventListener("resize", updatePopoverHeight);
+  window.visualViewport?.addEventListener("scroll", updatePopoverHeight);
+});
+onUnmounted(() => {
+  document.removeEventListener("pointerdown", closeOutside);
+  window.removeEventListener("resize", updatePopoverHeight);
+  window.removeEventListener("scroll", updatePopoverHeight, true);
+  window.visualViewport?.removeEventListener("resize", updatePopoverHeight);
+  window.visualViewport?.removeEventListener("scroll", updatePopoverHeight);
+});
 
 const asOf = computed(() =>
   new Intl.DateTimeFormat("en-ZA", {
@@ -70,12 +99,14 @@ const accountName = (account: AccountsResponse["accounts"][number]) => {
     class="account-control"
     :class="compact ? 'selected-balance' : 'accounts-overview'"
   >
+    <span class="mobile-field-label" aria-hidden="true">Account</span>
     <span class="field-label">Posted balance · {{ asOf }}</span>
     <details
       v-if="response.accounts.length"
       ref="picker"
       class="account-picker"
-      @keydown.esc.prevent="closePicker"
+      @keydown.esc.prevent="closePicker()"
+      @toggle="onToggle"
     >
       <summary
         class="select-button account-button"
@@ -103,9 +134,11 @@ const accountName = (account: AccountsResponse["accounts"][number]) => {
           ><small>Posted · {{ asOfCompact }}</small></span
         >
       </summary>
-      <fieldset class="account-options">
+      <fieldset
+        class="account-options"
+        :style="{ '--account-max-height': `${popoverMaxHeight}px` }"
+      >
         <legend class="sr-only">Choose account for spending analysis</legend>
-        <h2 class="sr-only">Your accounts</h2>
         <label
           v-for="account in response.accounts"
           :key="account.id"

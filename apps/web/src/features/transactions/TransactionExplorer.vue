@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import {
   ApiError,
@@ -8,7 +15,6 @@ import {
   type Activity,
   type Account,
   type CategoryCode,
-  type TransactionType,
 } from "../../api/client";
 import { money } from "../../utils/money";
 import categoryPolicy from "../../../../../contracts/finance/categories.json";
@@ -19,6 +25,7 @@ const props = defineProps<{
   from: string;
   to: string;
   hidden: boolean;
+  mobileSearchOpen?: boolean;
   active: boolean;
   generation: number;
   datasetEpoch: string;
@@ -36,32 +43,31 @@ const emit = defineEmits<{
   revisionAligned: [];
 }>();
 const searchInput = ref("");
+const searchField = ref<HTMLInputElement | null>(null);
 const filterMenu = ref<HTMLDetailsElement | null>(null);
+function closeFilterOutside(event: PointerEvent) {
+  if (
+    filterMenu.value?.open &&
+    !filterMenu.value.contains(event.target as Node)
+  )
+    filterMenu.value.open = false;
+}
+function closeFilterOnEscape(event: KeyboardEvent) {
+  if (event.key === "Escape" && filterMenu.value?.open) {
+    filterMenu.value.open = false;
+    filterMenu.value.querySelector("summary")?.focus();
+  }
+}
+onMounted(() => {
+  document.addEventListener("pointerdown", closeFilterOutside);
+  document.addEventListener("keydown", closeFilterOnEscape);
+});
 const search = ref("");
 const status = ref<"ALL" | "PENDING" | "POSTED" | "CANCELLED">("ALL");
-const type = ref<TransactionType | "">("");
 const category = ref<CategoryCode | "">("");
 const pageCursors = ref<(string | undefined)[]>([undefined]);
 const page = ref(0);
 const timer = ref<ReturnType<typeof setTimeout>>();
-const types: TransactionType[] = [
-  "SALARY_CREDIT",
-  "ALLOWANCE_CREDIT",
-  "EXTERNAL_RECEIPT",
-  "INTEREST_CREDIT",
-  "CARD_PURCHASE",
-  "DEBIT_ORDER",
-  "EXTERNAL_PAYMENT",
-  "CASH_WITHDRAWAL",
-  "BANK_FEE",
-  "SPEND_REFUND",
-  "SPEND_REVERSAL",
-  "INCOME_REVERSAL",
-  "OWN_TRANSFER_OUT",
-  "OWN_TRANSFER_IN",
-  "OWN_TRANSFER_REVERSAL_OUT",
-  "OWN_TRANSFER_REVERSAL_IN",
-];
 const categories: CategoryCode[] = [
   "HOUSING_UTILITIES",
   "GROCERIES",
@@ -123,21 +129,21 @@ const accountName = (item: Activity) => {
   const account = props.accounts?.find((entry) => entry.id === item.accountId);
   return `${account?.alias ?? "Account"} · •• ${item.maskedSuffix}`;
 };
+const transactionQueryKey = computed(() => [
+  "transactions",
+  props.customerId,
+  props.generation,
+  props.datasetEpoch,
+  props.accountIds.join(","),
+  props.from,
+  props.to,
+  status.value,
+  category.value,
+  search.value,
+  pageCursors.value[page.value],
+]);
 const query = useQuery({
-  queryKey: computed(() => [
-    "transactions",
-    props.customerId,
-    props.generation,
-    props.datasetEpoch,
-    props.accountIds.join(","),
-    props.from,
-    props.to,
-    status.value,
-    type.value,
-    category.value,
-    search.value,
-    pageCursors.value[page.value],
-  ]),
+  queryKey: transactionQueryKey,
   queryFn: ({ signal }) =>
     getTransactions(
       {
@@ -145,7 +151,6 @@ const query = useQuery({
         from: props.from,
         to: props.to,
         status: status.value,
-        type: type.value || undefined,
         category: category.value || undefined,
         search: search.value || undefined,
         cursor: pageCursors.value[page.value],
@@ -158,6 +163,13 @@ const query = useQuery({
   retry: false,
   staleTime: 0,
   refetchOnWindowFocus: false,
+  // Reuse rows only when the customer, scope, filters, and cursor still match.
+  placeholderData: (previousData, previousQuery) =>
+    previousQuery?.queryKey.every(
+      (part, index) => index === 9 || part === transactionQueryKey.value[index],
+    )
+      ? previousData
+      : undefined,
 });
 function availableHistoryStart(referenceDate: string) {
   const [year, month, day] = referenceDate.split("-").map(Number);
@@ -193,7 +205,6 @@ const history = useQuery({
       query.data.value?.items.length === 0 &&
       page.value === 0 &&
       status.value === "ALL" &&
-      !type.value &&
       !category.value &&
       !search.value,
   ),
@@ -235,20 +246,30 @@ const normalizeSearch = (value: string) =>
     .replace(/\p{White_Space}+/gu, " ");
 const normalizedSearch = computed(() => normalizeSearch(searchInput.value));
 const searchCodePoints = computed(() => [...normalizedSearch.value].length);
-const searchUpdating = computed(() => normalizedSearch.value !== search.value);
+const validSearch = computed(() =>
+  searchCodePoints.value === 1 ? "" : normalizedSearch.value,
+);
+const searchUpdating = computed(() => validSearch.value !== search.value);
 const searchError = computed(() =>
-  searchCodePoints.value === 1
-    ? "Enter at least 2 characters."
-    : searchCodePoints.value > 100
-      ? "Search is limited to 100 characters."
-      : "",
+  searchCodePoints.value > 100 ? "Search is limited to 100 characters." : "",
+);
+watch(
+  () => props.mobileSearchOpen,
+  async (open) => {
+    if (open) {
+      await nextTick();
+      searchField.value?.focus();
+    } else {
+      searchInput.value = "";
+      search.value = "";
+    }
+  },
 );
 watch(searchInput, () => {
   if (timer.value) clearTimeout(timer.value);
-  const normalized = normalizedSearch.value;
   if (searchError.value) return;
   timer.value = setTimeout(() => {
-    search.value = normalized;
+    search.value = validSearch.value;
   }, 300);
 });
 watch(
@@ -257,7 +278,6 @@ watch(
     () => props.from,
     () => props.to,
     status,
-    type,
     category,
     search,
   ],
@@ -323,7 +343,6 @@ function reset() {
   searchInput.value = "";
   search.value = "";
   status.value = "ALL";
-  type.value = "";
   category.value = "";
   if (filterMenu.value) filterMenu.value.open = false;
 }
@@ -339,12 +358,20 @@ function previous() {
   if (page.value) page.value--;
 }
 let opener: HTMLElement | null = null;
-function open(id: string) {
-  if (!props.detailId) opener = document.activeElement as HTMLElement;
+function open(id: string, focusTarget = document.activeElement as HTMLElement) {
+  if (!props.detailId) opener = focusTarget;
   emit("open", id);
+}
+function openRow(id: string, event: MouseEvent) {
+  const button = (
+    event.currentTarget as HTMLTableRowElement
+  ).querySelector<HTMLElement>(".activity-link");
+  open(id, button ?? undefined);
 }
 function close() {
   emit("close");
+}
+function restoreDetailFocus() {
   requestAnimationFrame(() =>
     (opener?.isConnected
       ? opener
@@ -389,12 +416,21 @@ if (typeof window !== "undefined") window.addEventListener("keydown", onKey);
 onBeforeUnmount(() => {
   if (timer.value) clearTimeout(timer.value);
   window.removeEventListener("keydown", onKey);
+  document.removeEventListener("pointerdown", closeFilterOutside);
+  document.removeEventListener("keydown", closeFilterOnEscape);
 });
 </script>
 
 <template>
-  <section class="transaction-explorer" aria-label="Transaction explorer">
+  <section
+    class="transaction-explorer"
+    :class="{
+      'search-active': mobileSearchOpen || status !== 'ALL' || category,
+    }"
+    aria-label="Transaction explorer"
+  >
     <div
+      id="transaction-tools"
       class="transaction-tools"
       role="search"
       aria-label="Filter transactions"
@@ -412,16 +448,41 @@ onBeforeUnmount(() => {
           <circle cx="10.5" cy="10.5" r="6.5" />
           <path d="m16 16 5 5" /></svg
         ><input
+          ref="searchField"
           v-model="searchInput"
           type="search"
           placeholder="Search transactions"
           :aria-invalid="!!searchError"
           :aria-describedby="
-            searchError ? 'transaction-search-error' : undefined
+            searchError
+              ? 'transaction-search-error'
+              : searchCodePoints === 1
+                ? 'transaction-search-hint'
+                : undefined
           "
-      /></label>
+        /><span
+          v-if="
+            !searchError &&
+            (searchUpdating || (query.isFetching.value && query.data.value))
+          "
+          class="search-progress"
+          role="status"
+          ><span class="sr-only">Updating results…</span></span
+        ></label
+      >
       <details ref="filterMenu" class="transaction-filter-menu">
-        <summary class="select-button">Filters</summary>
+        <summary
+          class="select-button"
+          :aria-label="
+            status !== 'ALL' || category ? 'Filters, active' : 'Filters'
+          "
+        >
+          Filters<span
+            v-if="status !== 'ALL' || category"
+            class="filter-indicator"
+            aria-hidden="true"
+          />
+        </summary>
         <div class="transaction-filter-popover">
           <label
             >Status<select v-model="status">
@@ -429,14 +490,6 @@ onBeforeUnmount(() => {
               <option value="PENDING">Pending</option>
               <option value="POSTED">Posted</option>
               <option value="CANCELLED">Cancelled</option>
-            </select></label
-          >
-          <label
-            >Type<select v-model="type">
-              <option value="">All types</option>
-              <option v-for="entry in types" :key="entry" :value="entry">
-                {{ label(entry) }}
-              </option>
             </select></label
           >
           <label
@@ -461,46 +514,31 @@ onBeforeUnmount(() => {
     >
       {{ searchError }}
     </p>
-    <p v-if="!searchError && searchUpdating" class="state-panel" role="status">
-      Searching transactions…
-    </p>
     <p
-      v-else-if="!searchError && queryMismatch"
-      class="state-panel"
-      role="status"
+      v-else-if="searchCodePoints === 1"
+      id="transaction-search-hint"
+      class="sr-only"
     >
+      Enter one more character to search.
+    </p>
+    <p v-if="queryMismatch" class="state-panel" role="status">
       {{
         reconciling
           ? "Checking for updated activity…"
-          : "Updated activity is available. Use Refresh to align your view."
+          : "Updated activity is available. Reload the page to align your view."
       }}
     </p>
-    <p
-      v-else-if="!searchError && query.isPending.value"
-      class="state-panel"
-      role="status"
-    >
+    <p v-else-if="query.isPending.value" class="state-panel" role="status">
       Loading transactions…
     </p>
-    <div
-      v-else-if="!searchError && query.isError.value"
-      class="state-panel error"
-      role="alert"
-    >
+    <div v-else-if="query.isError.value" class="state-panel error" role="alert">
       Transactions could not be loaded.
       <button type="button" @click="query.refetch()">Retry</button>
     </div>
-    <template v-else-if="!searchError">
-      <p
-        v-if="query.isFetching.value"
-        class="transaction-refresh"
-        role="status"
-      >
-        Refreshing transactions…
-      </p>
-      <p v-if="!rows.length" class="state-panel">
+    <template v-else>
+      <p v-if="!rows.length" class="state-panel" role="status">
         {{
-          status !== "ALL" || type || category || search
+          status !== "ALL" || category || search
             ? "No transactions match these filters."
             : history.isPending.value
               ? "Checking available history…"
@@ -512,11 +550,7 @@ onBeforeUnmount(() => {
         }}
         <button
           v-if="
-            status === 'ALL' &&
-            !type &&
-            !category &&
-            !search &&
-            history.isError.value
+            status === 'ALL' && !category && !search && history.isError.value
           "
           type="button"
           @click="history.refetch()"
@@ -529,6 +563,7 @@ onBeforeUnmount(() => {
           v-for="group in groupedRows"
           :key="group.status"
           class="activity-section"
+          :class="group.status.toLowerCase()"
           :aria-label="group.title"
         >
           <h2 class="subsection-title">{{ group.title }}</h2>
@@ -549,13 +584,18 @@ onBeforeUnmount(() => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in group.items" :key="item.id">
+              <tr
+                v-for="item in group.items"
+                :key="item.id"
+                class="transaction-row"
+                @click="openRow(item.id, $event)"
+              >
                 <td>{{ date(item) }}</td>
                 <td>
                   <button
                     type="button"
                     class="activity-link"
-                    @click="open(item.id)"
+                    @click.stop="open(item.id)"
                   >
                     {{ item.merchantName || item.description }}
                   </button>
@@ -594,10 +634,15 @@ onBeforeUnmount(() => {
           </table>
         </section>
       </div>
-      <div v-if="rows.length || page" class="activity-pagination">
+      <div
+        v-if="page || query.data.value?.nextCursor"
+        class="activity-pagination"
+      >
         <button type="button" :disabled="!page" @click="previous">
           Previous</button
-        ><span>Showing {{ rows.length }} results</span
+        ><span class="page-count"
+          ><strong>Page {{ page + 1 }}</strong
+          ><span class="page-size">{{ rows.length }} on this page</span></span
         ><button
           type="button"
           :disabled="!query.data.value?.nextCursor"
@@ -607,102 +652,108 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </template>
-    <div v-if="detailId" class="detail-backdrop" @click.self="close">
-      <aside
-        class="detail-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="detail-title"
-      >
-        <div class="detail-heading">
-          <h2 id="detail-title">Transaction details</h2>
-          <button
-            type="button"
-            class="detail-close"
-            aria-label="Close transaction details"
-            @click="close"
-          >
-            ×
-          </button>
-        </div>
-        <p v-if="detail.isPending.value" role="status">Loading transaction…</p>
-        <p v-else-if="detail.isError.value" role="alert">
-          Transaction details unavailable.
-          <button type="button" @click="detail.refetch()">Retry</button>
-        </p>
-        <template v-else-if="detail.data.value">
-          <p class="detail-amount">{{ amount(detail.data.value) }}</p>
-          <p class="detail-merchant">
-            {{
-              detail.data.value.merchantName || detail.data.value.description
-            }}
-          </p>
-          <div class="detail-badges">
-            <span
-              class="status-badge"
-              :class="detail.data.value.status.toLowerCase()"
-              >{{ label(detail.data.value.status) }}</span
+    <Transition name="detail" @after-leave="restoreDetailFocus">
+      <div v-if="detailId" class="detail-backdrop" @click.self="close">
+        <aside
+          class="detail-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="detail-title"
+        >
+          <div class="detail-heading">
+            <h2 id="detail-title">Transaction details</h2>
+            <button
+              type="button"
+              class="detail-close"
+              aria-label="Close transaction details"
+              @click="close"
             >
-            <span class="detail-type">{{ label(detail.data.value.type) }}</span>
+              ×
+            </button>
           </div>
-          <p v-if="detail.data.value.recordKind === 'AUTHORIZATION'">
-            {{
-              detail.data.value.status === "PENDING"
-                ? "Authorised, not posted. This does not affect posted spending."
-                : "Cancelled authorisation. This did not affect posted spending."
-            }}
+          <p v-if="detail.isPending.value" role="status">
+            Loading transaction…
           </p>
-          <dl>
-            <dt>Account</dt>
-            <dd>{{ accountName(detail.data.value) }}</dd>
-            <template v-if="detail.data.value.occurredAt">
-              <dt>Transaction date</dt>
-              <dd>{{ detailDate(detail.data.value.occurredAt) }}</dd>
-            </template>
-            <template v-if="detail.data.value.postedAt">
-              <dt>Posting date</dt>
-              <dd>{{ detailDate(detail.data.value.postedAt) }}</dd>
-            </template>
-            <template v-if="detail.data.value.categoryCode">
-              <dt>Category</dt>
-              <dd>{{ label(detail.data.value.categoryCode) }}</dd> </template
-            ><template v-if="detail.data.value.description">
-              <dt>Original description</dt>
-              <dd>{{ detail.data.value.description }}</dd> </template
-            ><template
-              v-if="
-                detail.data.value.recordKind === 'POSTED_ENTRY' &&
-                detail.data.value.authorizedAmountMinor
-              "
-            >
-              <dt>Originally authorised</dt>
-              <dd>
-                {{
-                  hidden
-                    ? "••••"
-                    : money(detail.data.value.authorizedAmountMinor)
-                }}
-              </dd> </template
-            ><template
-              v-if="
-                detail.data.value.recordKind === 'POSTED_ENTRY' &&
-                detail.data.value.originalActivityId
-              "
-            >
-              <dt>Original activity</dt>
-              <dd>
-                <button
-                  type="button"
-                  class="text-link"
-                  @click="open(detail.data.value.originalActivityId!)"
-                >
-                  {{ detail.data.value.originalActivityId }}
-                </button>
-              </dd>
-            </template>
-          </dl>
-        </template>
-      </aside>
-    </div>
+          <p v-else-if="detail.isError.value" role="alert">
+            Transaction details unavailable.
+            <button type="button" @click="detail.refetch()">Retry</button>
+          </p>
+          <template v-else-if="detail.data.value">
+            <p class="detail-amount">{{ amount(detail.data.value) }}</p>
+            <p class="detail-merchant">
+              {{
+                detail.data.value.merchantName || detail.data.value.description
+              }}
+            </p>
+            <div class="detail-badges">
+              <span
+                class="status-badge"
+                :class="detail.data.value.status.toLowerCase()"
+                >{{ label(detail.data.value.status) }}</span
+              >
+              <span class="detail-type">{{
+                label(detail.data.value.type)
+              }}</span>
+            </div>
+            <p v-if="detail.data.value.recordKind === 'AUTHORIZATION'">
+              {{
+                detail.data.value.status === "PENDING"
+                  ? "Authorised, not posted. This does not affect posted spending."
+                  : "Cancelled authorisation. This did not affect posted spending."
+              }}
+            </p>
+            <dl>
+              <dt>Account</dt>
+              <dd>{{ accountName(detail.data.value) }}</dd>
+              <template v-if="detail.data.value.occurredAt">
+                <dt>Transaction date</dt>
+                <dd>{{ detailDate(detail.data.value.occurredAt) }}</dd>
+              </template>
+              <template v-if="detail.data.value.postedAt">
+                <dt>Posting date</dt>
+                <dd>{{ detailDate(detail.data.value.postedAt) }}</dd>
+              </template>
+              <template v-if="detail.data.value.categoryCode">
+                <dt>Category</dt>
+                <dd>{{ label(detail.data.value.categoryCode) }}</dd> </template
+              ><template v-if="detail.data.value.description">
+                <dt>Original description</dt>
+                <dd>{{ detail.data.value.description }}</dd> </template
+              ><template
+                v-if="
+                  detail.data.value.recordKind === 'POSTED_ENTRY' &&
+                  detail.data.value.authorizedAmountMinor
+                "
+              >
+                <dt>Originally authorised</dt>
+                <dd>
+                  {{
+                    hidden
+                      ? "••••"
+                      : money(detail.data.value.authorizedAmountMinor)
+                  }}
+                </dd> </template
+              ><template
+                v-if="
+                  detail.data.value.recordKind === 'POSTED_ENTRY' &&
+                  detail.data.value.originalActivityId
+                "
+              >
+                <dt>Original activity</dt>
+                <dd>
+                  <button
+                    type="button"
+                    class="text-link"
+                    @click="open(detail.data.value.originalActivityId!)"
+                  >
+                    {{ detail.data.value.originalActivityId }}
+                  </button>
+                </dd>
+              </template>
+            </dl>
+          </template>
+        </aside>
+      </div>
+    </Transition>
   </section>
 </template>
