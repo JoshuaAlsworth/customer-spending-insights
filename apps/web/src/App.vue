@@ -1,30 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useQuery, useQueryClient } from "@tanstack/vue-query";
+import { useSessionLifecycle } from "./features/auth/useSessionLifecycle";
 import AppHeader from "./app/AppHeader.vue";
 import SignIn from "./features/auth/SignIn.vue";
 import ScopeControls from "./features/accounts/ScopeControls.vue";
 import AccountBalances from "./features/accounts/AccountBalances.vue";
 import OverviewView from "./features/overview/OverviewView.vue";
 import TransactionExplorer from "./features/transactions/TransactionExplorer.vue";
-import {
-  ApiError,
-  getAccounts,
-  getDashboard,
-  getSession,
-  logout,
-  type Session,
-} from "./api/client";
+import { ApiError, getAccounts, getDashboard } from "./api/client";
 
 const client = useQueryClient();
-const session = ref<Session | null>(null);
-const booting = ref(true);
 const refreshing = ref(false);
 const reconciliationAttempted = ref(false);
 const reconciling = ref(false);
 const generation = ref(0);
-const sessionLocked = ref(false);
-const hidden = computed(() => sessionLocked.value);
 const view = ref<"overview" | "transactions">(viewFromHash());
 const mobileSearchOpen = ref(false);
 const selectedAccount = ref("");
@@ -53,7 +43,6 @@ function closeDetail() {
 const from = ref("");
 const to = ref("");
 const periodSet = ref(false);
-const status = ref("");
 const accountIds = computed(() =>
   selectedAccount.value ? [selectedAccount.value] : [],
 );
@@ -65,24 +54,47 @@ const postedBalance = computed(() => {
         ?.postedBalanceMinor ?? null)
     : response.combinedPostedBalanceMinor;
 });
-let concealTimer: ReturnType<typeof setTimeout> | undefined;
 
-function clearSensitiveState() {
+function resetFinancialState() {
   generation.value++;
-  session.value = null;
   selectedAccount.value = "";
   accountSelectionInitialized.value = false;
   detailId.value = null;
   from.value = "";
   to.value = "";
   periodSet.value = false;
-  sessionLocked.value = false;
   reconciliationAttempted.value = false;
   reconciling.value = false;
   refreshing.value = false;
   mobileSearchOpen.value = false;
   client.clear();
 }
+
+const {
+  session,
+  booting,
+  sessionLocked,
+  hidden,
+  status,
+  clearSensitiveState,
+  validateSession,
+  signOut,
+  signedIn,
+} = useSessionLifecycle(
+  resetFinancialState,
+  () => {
+    view.value = viewFromHash();
+    detailId.value = parseDetail();
+  },
+  () => {
+    view.value = "overview";
+    history.replaceState(
+      history.state,
+      "",
+      `${location.pathname}${location.search}#overview`,
+    );
+  },
+);
 
 const accounts = useQuery({
   queryKey: computed(() => [
@@ -199,74 +211,6 @@ watch(
     }
   },
 );
-watch(session, (current) => {
-  if (concealTimer) clearTimeout(concealTimer);
-  if (!current) return;
-  const remaining = current.expiresAtEpochMillis - Date.now();
-  concealTimer = setTimeout(
-    () => {
-      clearSensitiveState();
-      status.value = "Your session ended. Sign in again to view your spending.";
-    },
-    Math.max(0, remaining),
-  );
-});
-
-let sessionCheck = 0;
-async function validateSession() {
-  const check = ++sessionCheck;
-  sessionLocked.value = true;
-  booting.value = true;
-  try {
-    const current = await getSession();
-    if (check !== sessionCheck) return;
-    if (!session.value || session.value.customerId !== current.customerId) {
-      clearSensitiveState();
-    }
-    session.value = current;
-    sessionLocked.value = false;
-    view.value = viewFromHash();
-    detailId.value = parseDetail();
-  } catch {
-    if (check !== sessionCheck) return;
-    clearSensitiveState();
-  } finally {
-    if (check === sessionCheck) booting.value = false;
-  }
-}
-
-async function signOut() {
-  sessionCheck++;
-  sessionLocked.value = true;
-  try {
-    await logout();
-  } catch {
-    booting.value = false;
-    status.value = "Sign out could not be confirmed. Try again.";
-    return;
-  }
-  clearSensitiveState();
-  view.value = "overview";
-  history.replaceState(
-    history.state,
-    "",
-    `${location.pathname}${location.search}#overview`,
-  );
-  booting.value = false;
-  status.value = "You have signed out.";
-  channel?.postMessage("session-changed");
-}
-function signedIn(current: Session) {
-  sessionCheck++;
-  clearSensitiveState();
-  session.value = current;
-  sessionLocked.value = false;
-  view.value = viewFromHash();
-  detailId.value = parseDetail();
-  booting.value = false;
-  status.value = "";
-  channel?.postMessage("session-changed");
-}
 async function refresh() {
   if (!session.value || sessionLocked.value || refreshing.value) return;
   const customerId = session.value.customerId;
@@ -422,35 +366,8 @@ function onHashChange() {
   view.value = viewFromHash();
   detailId.value = parseDetail();
 }
-function onPageShow(event: PageTransitionEvent) {
-  if (event.persisted) void validateSession();
-}
-function onVisibility() {
-  if (document.visibilityState === "visible" && session.value)
-    void validateSession();
-}
-const channel =
-  typeof BroadcastChannel === "undefined"
-    ? null
-    : new BroadcastChannel("spending-insights-session");
-if (channel)
-  channel.onmessage = () => {
-    clearSensitiveState();
-    void validateSession();
-  };
-onMounted(() => {
-  void validateSession();
-  window.addEventListener("hashchange", onHashChange);
-  window.addEventListener("pageshow", onPageShow);
-  document.addEventListener("visibilitychange", onVisibility);
-});
-onUnmounted(() => {
-  if (concealTimer) clearTimeout(concealTimer);
-  channel?.close();
-  window.removeEventListener("hashchange", onHashChange);
-  window.removeEventListener("pageshow", onPageShow);
-  document.removeEventListener("visibilitychange", onVisibility);
-});
+onMounted(() => window.addEventListener("hashchange", onHashChange));
+onUnmounted(() => window.removeEventListener("hashchange", onHashChange));
 </script>
 
 <template>

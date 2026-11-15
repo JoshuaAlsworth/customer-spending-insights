@@ -466,6 +466,7 @@ button:disabled {
   margin-top: 12px;
 }
 .trend-plot {
+  position: relative;
   display: grid;
   height: 190px;
   background: repeating-linear-gradient(
@@ -475,7 +476,6 @@ button:disabled {
     #edf0f4 calc(25% - 1px),
     #edf0f4 25%
   );
-  border-bottom: 1px solid #7f8a9c;
 }
 .trend-column {
   position: relative;
@@ -490,24 +490,16 @@ button:disabled {
   background: #84a7ea;
   border-radius: 3px 3px 0 0;
 }
-.trend-chart.signed .trend-bar:not(.negative) {
-  bottom: 50%;
-}
-.trend-chart.signed .trend-bar.negative {
-  top: 50%;
-  bottom: auto;
+.trend-bar.negative {
   background: var(--credit);
   border-radius: 0 0 3px 3px;
 }
-.trend-chart.signed .trend-plot {
-  background-position: 0 50%;
-  border-bottom: 0;
-  background-image: linear-gradient(
-    to bottom,
-    transparent calc(50% - 1px),
-    #7f8a9c 50%,
-    transparent calc(50% + 1px)
-  );
+.trend-zero {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid #7f8a9c;
+  pointer-events: none;
 }
 .trend-labels {
   display: grid;

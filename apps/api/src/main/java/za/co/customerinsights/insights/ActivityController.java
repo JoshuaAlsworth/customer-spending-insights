@@ -67,9 +67,7 @@ public class ActivityController {
     }
 
     public record ActivityPage(
-            List<Map<String, Object>> items,
-            String nextCursor,
-            FinancialController.Dataset dataset) {}
+            List<Map<String, Object>> items, String nextCursor, FinancialQuery.Dataset dataset) {}
 
     @GetMapping
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)

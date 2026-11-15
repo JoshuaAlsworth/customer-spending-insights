@@ -590,7 +590,7 @@ body {
 }
 .trend-axis {
   position: absolute;
-  inset: 0 auto 26px 0;
+  inset: 0 auto 0 -52px;
   width: 45px;
   display: flex;
   flex-direction: column;
@@ -598,6 +598,11 @@ body {
   color: var(--muted);
   font-size: 10px;
   text-align: right;
+}
+.trend-axis span {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
 }
 .trend-column {
   border: 0;

@@ -72,7 +72,7 @@ export const options = {
     "financial_scenario{period:current}": ["count>0"],
     "financial_scenario{period:previous}": ["count>0"],
     "financial_scenario{period:wide}": ["count>0"],
-    "financial_scenario{page:deep}": ["count>0"],
+    "financial_scenario{page:continuation}": ["count>0"],
     dropped_iterations: ["count==0"],
     "http_req_duration{name:dashboard}": ["p(95)<300", "p(99)<1000"],
     "http_req_duration{name:transactions}": ["p(95)<300", "p(99)<1000"],
@@ -158,7 +158,7 @@ export function setup() {
           historyCases.push({
             ...selected,
             query: `${base}&cursor=${encodeURIComponent(page.nextCursor)}`,
-            page: "deep",
+            page: "continuation",
           });
         }
       }

@@ -351,6 +351,50 @@ class SecurityProcessIntegrationTest {
                 statement.executeUpdate(
                         "UPDATE login_attempts SET blocked_until=now()-interval '1 second' WHERE login_key='fixture-f04'");
             }
+            for (int failure = 1; failure <= 5; failure++) {
+                assertThat(
+                                send(
+                                                locked,
+                                                failure % 2 == 0 ? portA : portB,
+                                                "POST",
+                                                "/api/v1/auth/login",
+                                                login("fixture-f04", "wrong"),
+                                                token(lockedCsrf))
+                                        .statusCode())
+                        .isEqualTo(401);
+                try (var admin =
+                                DriverManager.getConnection(
+                                        database.getJdbcUrl(),
+                                        database.getUsername(),
+                                        database.getPassword());
+                        var statement = admin.createStatement();
+                        var rows =
+                                statement.executeQuery(
+                                        "SELECT attempts,coalesce(blocked_until>now(),false) FROM login_attempts WHERE login_key='fixture-f04'")) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getInt(1)).isEqualTo(failure);
+                    assertThat(rows.getBoolean(2)).isEqualTo(failure == 5);
+                }
+            }
+            assertThat(
+                            send(
+                                            locked,
+                                            portB,
+                                            "POST",
+                                            "/api/v1/auth/login",
+                                            login("fixture-f04", "fixture-only-password"),
+                                            token(lockedCsrf))
+                                    .statusCode())
+                    .isEqualTo(401);
+            try (var admin =
+                            DriverManager.getConnection(
+                                    database.getJdbcUrl(),
+                                    database.getUsername(),
+                                    database.getPassword());
+                    var statement = admin.createStatement()) {
+                statement.executeUpdate(
+                        "UPDATE login_attempts SET blocked_until=now()-interval '1 second' WHERE login_key='fixture-f04'");
+            }
             assertThat(
                             send(
                                             locked,

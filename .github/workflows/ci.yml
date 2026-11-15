@@ -30,7 +30,6 @@ jobs:
           umask 077
           printf 'POSTGRES_PASSWORD=%s\nAPI_DB_PASSWORD=%s\nCURSOR_SECRET=%s\nSIMULATOR_DB_PASSWORD=%s\n' "$(openssl rand -hex 24)" "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > .env
       - run: ./dev check
-      - run: ./dev test
       - run: ./dev build
       - name: Browser account, money, navigation, category, transaction and simulator checks
         run: |

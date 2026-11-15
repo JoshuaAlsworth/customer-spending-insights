@@ -54,7 +54,7 @@ public class ActivityCursorCodec {
                         "effective-desc-id-desc"));
     }
 
-    void validate(Cursor cursor, String binding, FinancialController.Dataset dataset) {
+    void validate(Cursor cursor, String binding, FinancialQuery.Dataset dataset) {
         if (!cursor.binding().equals(binding)) invalid();
         if (!cursor.datasetId().equals(dataset.datasetId())
                 || !cursor.epoch().equals(dataset.instanceEpoch())

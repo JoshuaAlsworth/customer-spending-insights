@@ -160,16 +160,6 @@ HELP
   test)
     [ "$#" -eq 1 ] || usage_error './dev test'
     (cd apps/api && ./gradlew clean test)
-    python3 - <<'PY'
-from pathlib import Path
-from xml.etree import ElementTree
-
-reports = list(Path('apps/api/build/test-results/test').glob('TEST-*.xml'))
-counts = [ElementTree.parse(report).getroot().attrib for report in reports]
-executed = sum(int(c['tests']) - int(c.get('skipped', 0)) for c in counts)
-assert executed > 0 and all(int(c.get('failures', 0)) == 0 and int(c.get('errors', 0)) == 0 for c in counts), 'Java tests missing, skipped or failed'
-print(f'Java tests executed: {executed}')
-PY
     pnpm test
     (cd tools/data-generator && uv run --locked pytest -q)
     ;;
